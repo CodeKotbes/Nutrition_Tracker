@@ -14,5 +14,7 @@ data class FoodItem(
     val protein: Double,
     val carbs: Double,
     val fat: Double,
+    val fiber: Double = 0.0,
+    val sugar: Double = 0.0,
     val isCustom: Boolean = false
 )

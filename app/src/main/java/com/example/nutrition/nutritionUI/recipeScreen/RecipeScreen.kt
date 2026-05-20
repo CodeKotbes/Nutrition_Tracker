@@ -1,4 +1,4 @@
-package com.example.nutrition.ui
+package com.example.nutrition.nutritionUI.recipeScreen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
+import com.example.nutrition.nutritionUI.foodUI.AddFoodSheetContent
+import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,22 +36,18 @@ fun RecipeScreen(viewModel: FoodViewModel) {
     val searchResults by viewModel.searchResults.collectAsState()
     val historyFoods by viewModel.allFoods.collectAsState()
     val isDark by viewModel.isDarkMode.collectAsState()
-
     val bgColor = if (isDark) Color(0xFF000000) else Color(0xFFF2F2F7)
     val cardColor = if (isDark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)
     val textColor = if (isDark) Color.White else Color.Black
     val dividerColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA)
     val grayText = if (isDark) Color(0xFFAEAEB2) else Color(0xFF8E8E93)
     val accentBlue = if (isDark) Color(0xFF0A84FF) else Color(0xFF007AFF)
-
     var isCreatingRecipe by rememberSaveable { mutableStateOf(false) }
     var recipeNameInput by rememberSaveable { mutableStateOf("") }
     var showIngredientSearchSheet by rememberSaveable { mutableStateOf(false) }
-
     var recipeToDelete by remember { mutableStateOf<Recipe?>(null) }
     var ingredientToDelete by remember { mutableStateOf<RecipeIngredient?>(null) }
     var ingredientToEdit by remember { mutableStateOf<RecipeIngredient?>(null) }
-    var editIngredientGramsInput by rememberSaveable { mutableStateOf("") }
 
     if (recipeToDelete != null) {
         Dialog(onDismissRequest = { recipeToDelete = null }) {
@@ -76,7 +74,6 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     lineHeight = 22.sp
                 )
                 Spacer(modifier = Modifier.height(24.dp))
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -88,9 +85,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             .height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = grayText.copy(alpha = 0.2f)),
                         shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold)
-                    }
+                    ) { Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold) }
                     Button(
                         onClick = {
                             recipeToDelete?.let { viewModel.deleteRecipe(it) }; recipeToDelete =
@@ -101,9 +96,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             .height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF453A)),
                         shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Löschen", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
+                    ) { Text("Löschen", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -134,7 +127,6 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     lineHeight = 22.sp
                 )
                 Spacer(modifier = Modifier.height(24.dp))
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -146,9 +138,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             .height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = grayText.copy(alpha = 0.2f)),
                         shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold)
-                    }
+                    ) { Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold) }
                     Button(
                         onClick = {
                             ingredientToDelete?.let {
@@ -162,9 +152,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             .height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF453A)),
                         shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Entfernen", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
+                    ) { Text("Entfernen", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -172,46 +160,186 @@ fun RecipeScreen(viewModel: FoodViewModel) {
 
     if (ingredientToEdit != null) {
         Dialog(onDismissRequest = { ingredientToEdit = null }) {
+            val currentFactor = (ingredientToEdit?.amountInGrams ?: 100.0) / 100.0
+            var editIngName by remember(ingredientToEdit) {
+                mutableStateOf(
+                    ingredientToEdit?.foodName ?: ""
+                )
+            }
+            var editIngKcal by remember(ingredientToEdit) {
+                mutableStateOf(
+                    if (currentFactor > 0) (ingredientToEdit!!.calories / currentFactor).toInt()
+                        .toString() else "0"
+                )
+            }
+            var editIngProtein by remember(ingredientToEdit) {
+                mutableStateOf(
+                    if (currentFactor > 0) (ingredientToEdit!!.protein / currentFactor).toInt()
+                        .toString() else "0"
+                )
+            }
+            var editIngCarbs by remember(ingredientToEdit) {
+                mutableStateOf(
+                    if (currentFactor > 0) (ingredientToEdit!!.carbs / currentFactor).toInt()
+                        .toString() else "0"
+                )
+            }
+            var editIngFat by remember(ingredientToEdit) {
+                mutableStateOf(
+                    if (currentFactor > 0) (ingredientToEdit!!.fat / currentFactor).toInt()
+                        .toString() else "0"
+                )
+            }
+            var editIngFiber by remember(ingredientToEdit) {
+                mutableStateOf(
+                    if (currentFactor > 0) (ingredientToEdit!!.fiber / currentFactor).toInt()
+                        .toString() else "0"
+                )
+            }
+            var editIngSugar by remember(ingredientToEdit) {
+                mutableStateOf(
+                    if (currentFactor > 0) (ingredientToEdit!!.sugar / currentFactor).toInt()
+                        .toString() else "0"
+                )
+            }
+            var editIngGrams by remember(ingredientToEdit) {
+                mutableStateOf(
+                    ingredientToEdit?.amountInGrams?.toInt()?.toString() ?: "100"
+                )
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp))
                     .background(cardColor)
                     .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "Menge anpassen",
+                    "Zutat korrigieren",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = textColor
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    ingredientToEdit?.foodName ?: "",
-                    color = grayText,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(24.dp))
 
                 OutlinedTextField(
-                    value = editIngredientGramsInput,
-                    onValueChange = { editIngredientGramsInput = it },
-                    label = { Text("Menge in Gramm", color = grayText) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    value = editIngName,
+                    onValueChange = { editIngName = it },
+                    label = { Text("Name", color = grayText) },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = textColor,
                         unfocusedTextColor = textColor,
-                        focusedBorderColor = accentBlue,
-                        unfocusedBorderColor = grayText.copy(alpha = 0.3f)
+                        focusedBorderColor = accentBlue
+                    )
+                )
+                OutlinedTextField(
+                    value = editIngKcal,
+                    onValueChange = { editIngKcal = it },
+                    label = { Text("Kalorien (pro 100g)", color = grayText) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        unfocusedTextColor = textColor,
+                        focusedBorderColor = accentBlue
                     )
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editIngProtein,
+                        onValueChange = { editIngProtein = it },
+                        label = { Text("Protein", color = grayText) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor,
+                            focusedBorderColor = accentBlue
+                        )
+                    )
+                    OutlinedTextField(
+                        value = editIngCarbs,
+                        onValueChange = { editIngCarbs = it },
+                        label = { Text("Carbs", color = grayText) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor,
+                            focusedBorderColor = accentBlue
+                        )
+                    )
+                    OutlinedTextField(
+                        value = editIngFat,
+                        onValueChange = { editIngFat = it },
+                        label = { Text("Fett", color = grayText) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor,
+                            focusedBorderColor = accentBlue
+                        )
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editIngFiber,
+                        onValueChange = { editIngFiber = it },
+                        label = { Text("Ballastst.", color = grayText) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor,
+                            focusedBorderColor = accentBlue
+                        )
+                    )
+                    OutlinedTextField(
+                        value = editIngSugar,
+                        onValueChange = { editIngSugar = it },
+                        label = { Text("Zucker", color = grayText) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor,
+                            focusedBorderColor = accentBlue
+                        )
+                    )
+                }
+
+                HorizontalDivider(
+                    color = dividerColor,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                OutlinedTextField(
+                    value = editIngGrams,
+                    onValueChange = { editIngGrams = it },
+                    label = { Text("Menge in Gramm", color = grayText) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        unfocusedTextColor = textColor,
+                        focusedBorderColor = accentBlue
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -223,15 +351,23 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             .height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = grayText.copy(alpha = 0.2f)),
                         shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold)
-                    }
+                    ) { Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold) }
                     Button(
                         onClick = {
-                            val grams =
-                                editIngredientGramsInput.toDoubleOrNull(); if (grams != null && ingredientToEdit != null) {
-                            viewModel.updateRecipeIngredientGrams(ingredientToEdit!!, grams)
-                        }; ingredientToEdit = null
+                            val grams = editIngGrams.toDoubleOrNull() ?: 100.0
+                            val f = grams / 100.0
+                            val updated = ingredientToEdit!!.copy(
+                                foodName = editIngName,
+                                amountInGrams = grams,
+                                calories = ((editIngKcal.toIntOrNull() ?: 0) * f).toInt(),
+                                protein = (editIngProtein.toDoubleOrNull() ?: 0.0) * f,
+                                carbs = (editIngCarbs.toDoubleOrNull() ?: 0.0) * f,
+                                fat = (editIngFat.toDoubleOrNull() ?: 0.0) * f,
+                                fiber = (editIngFiber.toDoubleOrNull() ?: 0.0) * f,
+                                sugar = (editIngSugar.toDoubleOrNull() ?: 0.0) * f
+                            )
+                            viewModel.updateRecipeIngredient(ingredientToEdit!!, updated)
+                            ingredientToEdit = null
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -327,7 +463,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                                             Icon(
                                                 Icons.Default.Close,
                                                 "Löschen",
-                                                tint = Color.Red.copy(alpha = 0.7f)
+                                                tint = grayText.copy(alpha = 0.6f)
                                             )
                                         }
                                     }
@@ -434,10 +570,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        ingredientToEdit = ingredient; editIngredientGramsInput =
-                                        ingredient.amountInGrams.toInt().toString()
-                                    }
+                                    .clickable { ingredientToEdit = ingredient }
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
@@ -458,7 +591,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                                     Icon(
                                         Icons.Default.Close,
                                         "Entfernen",
-                                        tint = grayText
+                                        tint = grayText.copy(alpha = 0.6f)
                                     )
                                 }
                             }
@@ -470,7 +603,8 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                 Button(
                     onClick = {
                         viewModel.saveRecipe(recipeNameInput) {
-                            isCreatingRecipe = false; recipeNameInput = ""
+                            isCreatingRecipe = false
+                            recipeNameInput = ""
                         }
                     },
                     modifier = Modifier
@@ -484,37 +618,52 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                         disabledContainerColor = grayText.copy(alpha = 0.3f)
                     )
                 ) { Text("Mahlzeit speichern", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
-            }
 
-            if (showIngredientSearchSheet) {
-                ModalBottomSheet(onDismissRequest = {
-                    showIngredientSearchSheet = false; viewModel.clearPreview()
-                }, containerColor = bgColor) {
-                    AddFoodSheetContent(
-                        mealName = "Mahlzeit",
-                        previewProduct = previewProduct,
-                        searchResults = searchResults,
-                        historyFoods = historyFoods,
-                        recipes = emptyList(),
-                        bgColor = bgColor,
-                        cardColor = cardColor,
-                        textColor = textColor,
-                        grayText = grayText,
-                        accentBlue = accentBlue,
-                        dividerColor = dividerColor,
-                        onBarcodeSearch = { viewModel.searchBarcode(it) },
-                        onTextSearch = { viewModel.searchFoodByName(it) },
-                        onProductSelected = { viewModel.selectProductForPreview(it) },
-                        onAdd = { food, grams ->
-                            viewModel.addIngredientToTempRecipe(
-                                food,
-                                grams
-                            ); showIngredientSearchSheet = false
+                if (showIngredientSearchSheet) {
+                    ModalBottomSheet(
+                        onDismissRequest = {
+                            showIngredientSearchSheet =
+                                false; viewModel.clearPreview(); viewModel.clearBarcodeError()
                         },
-                        onCustomAdd = { _, _, _, _, _, _ -> },
-                        onRecipeAdd = { _ -> },
-                        onCancel = { showIngredientSearchSheet = false; viewModel.clearPreview() }
-                    )
+                        containerColor = bgColor
+                    ) {
+                        AddFoodSheetContent(
+                            viewModel = viewModel,
+                            mealName = "Mahlzeit",
+                            previewProduct = previewProduct,
+                            searchResults = searchResults,
+                            historyFoods = historyFoods,
+                            recipes = emptyList(),
+                            bgColor = bgColor,
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            grayText = grayText,
+                            accentBlue = accentBlue,
+                            dividerColor = dividerColor,
+                            onTextSearch = { viewModel.searchFoodByName(it) },
+                            onProductSelected = { viewModel.selectProductForPreview(it) },
+                            onAdd = { food, grams ->
+                                viewModel.addIngredientToTempRecipe(
+                                    food,
+                                    grams
+                                ); showIngredientSearchSheet = false
+                            },
+                            onCustomAdd = { name, kcal, p, c, f, fiber, sugar, grams ->
+                                viewModel.addCustomIngredientToTempRecipe(
+                                    name,
+                                    kcal,
+                                    p,
+                                    c,
+                                    f,
+                                    fiber,
+                                    sugar,
+                                    grams
+                                )
+                                showIngredientSearchSheet = false
+                            },
+                            onRecipeAdd = { _ -> }
+                        )
+                    }
                 }
             }
         }

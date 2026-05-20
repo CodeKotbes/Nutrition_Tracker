@@ -30,14 +30,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.room.Room
-import com.example.nutrition.NutritionUI.GoalsScreen
 import com.example.nutrition.data.AppDatabase
 import com.example.nutrition.data.FoodRepository
-import com.example.nutrition.ui.AnalysisScreen
-import com.example.nutrition.ui.FoodScreen
-import com.example.nutrition.ui.FoodViewModel
-import com.example.nutrition.ui.OptionsScreen
-import com.example.nutrition.ui.RecipeScreen
+import com.example.nutrition.nutritionUI.analysisUI.AnalysisScreen
+import com.example.nutrition.nutritionUI.foodUI.FoodScreen
+import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
+import com.example.nutrition.nutritionUI.goalsScreen.GoalsScreen
+import com.example.nutrition.nutritionUI.optionsScreen.OptionsScreen
+import com.example.nutrition.nutritionUI.recipeScreen.RecipeScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
             database.foodItemDao(),
             database.diaryDao(),
             database.recipeDao(),
+            database.waterDao(),
             sharedPreferences
         )
 

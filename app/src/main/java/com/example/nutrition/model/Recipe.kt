@@ -11,5 +11,7 @@ data class Recipe(
     val totalCalories: Int,
     val totalProtein: Double,
     val totalCarbs: Double,
-    val totalFat: Double
+    val totalFat: Double,
+    val totalFiber: Double,
+    val totalSugar: Double
 )

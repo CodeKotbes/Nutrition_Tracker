@@ -22,5 +22,7 @@ data class ApiNutriments(
     @SerializedName("energy-kcal_100g") val energyKcal: Double?,
     @SerializedName("proteins_100g") val proteins: Double?,
     @SerializedName("carbohydrates_100g") val carbs: Double?,
-    @SerializedName("fat_100g") val fat: Double?
+    @SerializedName("fat_100g") val fat: Double?,
+    @SerializedName("fiber_100g") val fiber: Double?,
+    @SerializedName("sugar_100g") val sugar: Double?
 )

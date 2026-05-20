@@ -5,14 +5,13 @@ import com.example.nutrition.model.DiaryEntry
 import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
+import com.example.nutrition.model.WaterRecord
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.StateFlow
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
-import java.util.Calendar
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -21,8 +20,8 @@ class FoodRepository(
     private val foodItemDao: FoodItemDao,
     private val diaryDao: DiaryDao,
     private val recipeDao: RecipeDao,
+    private val waterDao: WaterDao,
     private val prefs: SharedPreferences
-
 ) {
     private val customHttpClient: OkHttpClient = try {
         val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
@@ -78,8 +77,22 @@ class FoodRepository(
         recipeDao.insertRecipeIngredients(ingredientsWithRecipeId)
     }
 
-    fun getSavedGoal(): Int {
-        return prefs.getInt("goal_kcal", 2500)
+    fun getSavedGoal(): Int = prefs.getInt("goal_kcal", 2500)
+    fun getSavedProteinGoal(): Int = prefs.getInt("goal_protein", 150)
+    fun getSavedCarbsGoal(): Int = prefs.getInt("goal_carbs", 250)
+    fun getSavedFatGoal(): Int = prefs.getInt("goal_fat", 80)
+    fun getSavedFiberGoal(): Int = prefs.getInt("goal_fiber", 30)
+    fun getSavedSugarGoal(): Int = prefs.getInt("goal_sugar", 50)
+
+    fun saveAllGoals(kcal: Int, protein: Int, carbs: Int, fat: Int, fiber: Int, sugar: Int) {
+        prefs.edit()
+            .putInt("goal_kcal", kcal)
+            .putInt("goal_protein", protein)
+            .putInt("goal_carbs", carbs)
+            .putInt("goal_fat", fat)
+            .putInt("goal_fiber", fiber)
+            .putInt("goal_sugar", sugar)
+            .apply()
     }
 
     fun saveGoal(kcal: Int) {
@@ -92,6 +105,24 @@ class FoodRepository(
 
     fun saveDarkMode(isDark: Boolean) {
         prefs.edit().putBoolean("dark_mode", isDark).apply()
+    }
+
+    fun getWaterRecordsByDate(date: String): Flow<List<WaterRecord>> {
+        return waterDao.getWaterRecordsByDate(date)
+    }
+
+    val allWaterRecords: Flow<List<WaterRecord>> = waterDao.getAllWaterRecords()
+
+    suspend fun insertWaterRecord(record: WaterRecord) {
+        waterDao.insertWaterRecord(record)
+    }
+
+    suspend fun updateWaterRecord(record: WaterRecord) {
+        waterDao.updateWaterRecord(record)
+    }
+
+    suspend fun deleteWaterRecordById(id: Int) {
+        waterDao.deleteWaterRecordById(id)
     }
 
     private val retrofit = Retrofit.Builder()
@@ -133,6 +164,8 @@ class FoodRepository(
                     protein = nutriments?.proteins ?: 0.0,
                     carbs = nutriments?.carbs ?: 0.0,
                     fat = nutriments?.fat ?: 0.0,
+                    fiber = nutriments?.fiber ?: 0.0,
+                    sugar = nutriments?.sugar ?: 0.0,
                     isCustom = false
                 )
             } ?: emptyList()
@@ -171,6 +204,8 @@ class FoodRepository(
                     protein = nutriments?.proteins ?: 0.0,
                     carbs = nutriments?.carbs ?: 0.0,
                     fat = nutriments?.fat ?: 0.0,
+                    fiber = nutriments?.fiber ?: 0.0,
+                    sugar = nutriments?.sugar ?: 0.0,
                     isCustom = false
                 )
                 insertFood(newFood)

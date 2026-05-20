@@ -1,4 +1,4 @@
-package com.example.nutrition.ui
+package com.example.nutrition.nutritionUI.foodViewModel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +7,7 @@ import com.example.nutrition.model.DiaryEntry
 import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
+import com.example.nutrition.model.WaterRecord
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -27,8 +28,24 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
     val currentDate: StateFlow<String> = _currentDate.asStateFlow()
     private val _isDarkMode = MutableStateFlow(repository.getSavedDarkMode())
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
+
     private val _goalKcal = MutableStateFlow(repository.getSavedGoal())
     val goalKcal: StateFlow<Int> = _goalKcal.asStateFlow()
+
+    private val _goalProtein = MutableStateFlow(repository.getSavedProteinGoal())
+    val goalProtein: StateFlow<Int> = _goalProtein.asStateFlow()
+
+    private val _goalCarbs = MutableStateFlow(repository.getSavedCarbsGoal())
+    val goalCarbs: StateFlow<Int> = _goalCarbs.asStateFlow()
+
+    private val _goalFat = MutableStateFlow(repository.getSavedFatGoal())
+    val goalFat: StateFlow<Int> = _goalFat.asStateFlow()
+
+    private val _goalFiber = MutableStateFlow(repository.getSavedFiberGoal())
+    val goalFiber: StateFlow<Int> = _goalFiber.asStateFlow()
+
+    private val _goalSugar = MutableStateFlow(repository.getSavedSugarGoal())
+    val goalSugar: StateFlow<Int> = _goalSugar.asStateFlow()
     private val _scannedProductPreview = MutableStateFlow<FoodItem?>(null)
     val scannedProductPreview: StateFlow<FoodItem?> = _scannedProductPreview.asStateFlow()
     private val _searchResults = MutableStateFlow<List<FoodItem>>(emptyList())
@@ -53,10 +70,60 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
         repository.saveDarkMode(newValue)
     }
 
+    fun updateAllGoals(kcal: Int, protein: Int, carbs: Int, fat: Int, fiber: Int, sugar: Int) {
+        repository.saveAllGoals(kcal, protein, carbs, fat, fiber, sugar)
+        _goalKcal.value = kcal
+        _goalProtein.value = protein
+        _goalCarbs.value = carbs
+        _goalFat.value = fat
+        _goalFiber.value = fiber
+        _goalSugar.value = sugar
+    }
+
+    val waterRecords: StateFlow<List<WaterRecord>> = _currentDate
+        .flatMapLatest { date -> repository.getWaterRecordsByDate(date) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allWaterRecords: StateFlow<List<WaterRecord>> = repository.allWaterRecords
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addWaterRecord(amount: Int) {
+        viewModelScope.launch {
+            val newRecord = WaterRecord(
+                amount = amount,
+                timestamp = System.currentTimeMillis(),
+                date = _currentDate.value
+            )
+            repository.insertWaterRecord(newRecord)
+        }
+    }
+
+    fun updateWaterRecord(id: Int, newAmount: Int) {
+        viewModelScope.launch {
+            val existingRecord = waterRecords.value.find { it.id == id }
+            if (existingRecord != null) {
+                repository.updateWaterRecord(existingRecord.copy(amount = newAmount))
+            }
+        }
+    }
+
+    private val _waterGoal = MutableStateFlow(2000)
+    val waterGoal: StateFlow<Int> = _waterGoal.asStateFlow()
+
+    fun updateWaterGoal(newGoal: Int) {
+        _waterGoal.value = newGoal
+    }
+
+    fun deleteWaterRecord(id: Int) {
+        viewModelScope.launch {
+            repository.deleteWaterRecordById(id)
+        }
+    }
+
+
     fun addRecipeToDiary(recipe: Recipe, mealType: String) {
         viewModelScope.launch {
             val ingredients = repository.getIngredientsForRecipe(recipe.id)
-
             ingredients.forEach { ingredient ->
                 val entry = DiaryEntry(
                     foodId = ingredient.foodId,
@@ -65,6 +132,8 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
                     protein = ingredient.protein,
                     carbs = ingredient.carbs,
                     fat = ingredient.fat,
+                    fiber = ingredient.fiber,
+                    sugar = ingredient.sugar,
                     amountInGrams = ingredient.amountInGrams,
                     mealType = mealType,
                     date = _currentDate.value
@@ -104,9 +173,48 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
         _currentDate.value = dateFormat.format(Date(timeInMillis))
     }
 
-    fun searchBarcode(barcode: String) {
+    private val _barcodeError = MutableStateFlow<String?>(null)
+    val barcodeError: StateFlow<String?> = _barcodeError.asStateFlow()
+
+    private val _isBarcodeLoading = MutableStateFlow(false)
+    val isBarcodeLoading: StateFlow<Boolean> = _isBarcodeLoading.asStateFlow()
+
+    fun clearBarcodeError() {
+        _barcodeError.value = null
+    }
+
+    fun searchBarcode(barcode: String, onFound: () -> Unit) {
         viewModelScope.launch {
-            _scannedProductPreview.value = repository.getFoodByBarcode(barcode)
+            _isBarcodeLoading.value = true
+            _barcodeError.value = null
+            try {
+                val product = repository.getFoodByBarcode(barcode)
+                if (product != null) {
+                    _scannedProductPreview.value = product
+                    _barcodeError.value = null
+                    onFound()
+                } else {
+                    _barcodeError.value =
+                        "Code '$barcode' erkannt, aber kein Produkt in der Datenbank gefunden."
+                }
+            } catch (e: Exception) {
+                _barcodeError.value =
+                    "Netzwerkfehler beim Abrufen des Barcodes. Bitte erneut versuchen."
+            } finally {
+                _isBarcodeLoading.value = false
+            }
+        }
+    }
+
+    fun updateDiaryEntry(entry: DiaryEntry) {
+        viewModelScope.launch {
+            repository.insertDiaryEntry(entry)
+        }
+    }
+
+    fun updateRecipeIngredient(oldIngredient: RecipeIngredient, newIngredient: RecipeIngredient) {
+        _tempIngredients.value = _tempIngredients.value.map {
+            if (it == oldIngredient) newIngredient else it
         }
     }
 
@@ -132,7 +240,9 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
             calories = (food.calories * factor).toInt(),
             protein = food.protein * factor,
             carbs = food.carbs * factor,
-            fat = food.fat * factor
+            fat = food.fat * factor,
+            fiber = food.fiber * factor,
+            sugar = food.sugar * factor
         )
         _tempIngredients.value = _tempIngredients.value + ingredient
         clearPreview()
@@ -158,25 +268,32 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
         viewModelScope.launch { repository.deleteRecipe(recipe) }
     }
 
-    fun saveRecipe(recipeName: String, onDone: () -> Unit) {
-        val ingredients = _tempIngredients.value
-        if (recipeName.isBlank() || ingredients.isEmpty()) return
-
+    fun saveRecipe(name: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            val totalKcal = ingredients.sumOf { it.calories }
-            val recipeIdToUse = _editingRecipeId.value ?: 0
+            val ingredients = _tempIngredients.value
+            if (ingredients.isEmpty()) return@launch
 
-            val recipe = Recipe(
-                id = recipeIdToUse,
-                name = recipeName,
+            val totalKcal = ingredients.sumOf { it.calories }
+            val totalProtein = ingredients.sumOf { it.protein }
+            val totalCarbs = ingredients.sumOf { it.carbs }
+            val totalFat = ingredients.sumOf { it.fat }
+            val totalFiber = ingredients.sumOf { it.fiber }
+            val totalSugar = ingredients.sumOf { it.sugar }
+
+            val newRecipe = Recipe(
+                name = name,
                 totalCalories = totalKcal,
-                totalProtein = ingredients.sumOf { it.protein },
-                totalCarbs = ingredients.sumOf { it.carbs },
-                totalFat = ingredients.sumOf { it.fat }
+                totalProtein = totalProtein,
+                totalCarbs = totalCarbs,
+                totalFat = totalFat,
+                totalFiber = totalFiber,
+                totalSugar = totalSugar
             )
-            repository.createRecipeWithIngredients(recipe, ingredients)
+
+            repository.createRecipeWithIngredients(newRecipe, ingredients)
+
             resetRecipeBuilder()
-            onDone()
+            onSuccess()
         }
     }
 
@@ -190,6 +307,8 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
                 protein = food.protein * factor,
                 carbs = food.carbs * factor,
                 fat = food.fat * factor,
+                fiber = food.fiber * factor,
+                sugar = food.sugar * factor,
                 amountInGrams = amountInGrams,
                 mealType = mealType,
                 date = _currentDate.value
@@ -205,6 +324,8 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
         p: Double,
         c: Double,
         f: Double,
+        fiber: Double,
+        sugar: Double,
         grams: Double,
         mealType: String
     ) {
@@ -215,20 +336,18 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
                 protein = p,
                 carbs = c,
                 fat = f,
+                fiber = fiber,
+                sugar = sugar,
                 isCustom = true
             )
             repository.insertFood(newFood)
             val factor = grams / 100.0
             val entry = DiaryEntry(
-                foodId = 0,
-                foodName = name,
-                calories = (kcal * factor).toInt(),
-                protein = p * factor,
-                carbs = c * factor,
-                fat = f * factor,
-                amountInGrams = grams,
-                mealType = mealType,
-                date = _currentDate.value
+                foodId = 0, foodName = name, calories = (kcal * factor).toInt(),
+                protein = p * factor, carbs = c * factor, fat = f * factor,
+                fiber = fiber * factor,
+                sugar = sugar * factor,
+                amountInGrams = grams, mealType = mealType, date = _currentDate.value
             )
             repository.insertDiaryEntry(entry)
         }
@@ -242,7 +361,9 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
                 calories = (entry.calories * ratio).toInt(),
                 protein = entry.protein * ratio,
                 carbs = entry.carbs * ratio,
-                fat = entry.fat * ratio
+                fat = entry.fat * ratio,
+                fiber = entry.fiber * ratio,
+                sugar = entry.sugar * ratio
             )
             repository.insertDiaryEntry(updatedEntry)
         }
@@ -255,13 +376,49 @@ class FoodViewModel(private val repository: FoodRepository) : ViewModel() {
             calories = (ingredient.calories * ratio).toInt(),
             protein = ingredient.protein * ratio,
             carbs = ingredient.carbs * ratio,
-            fat = ingredient.fat * ratio
+            fat = ingredient.fat * ratio,
+            fiber = ingredient.fiber * ratio,
+            sugar = ingredient.sugar * ratio
         )
+        _tempIngredients.value =
+            _tempIngredients.value.map { if (it == ingredient) updatedIngredient else it }
+    }
 
-        _tempIngredients.value = _tempIngredients.value.map {
-            if (it == ingredient) updatedIngredient else it
+    fun addCustomIngredientToTempRecipe(
+        name: String, kcal: Int, p: Double, c: Double, f: Double,
+        fiber: Double, sugar: Double, grams: Double
+    ) {
+        viewModelScope.launch {
+            val newFood = FoodItem(
+                name = name,
+                calories = kcal,
+                protein = p,
+                carbs = c,
+                fat = f,
+                fiber = fiber,
+                sugar = sugar,
+                isCustom = true
+            )
+            repository.insertFood(newFood)
+
+            val factor = grams / 100.0
+            val ingredient = RecipeIngredient(
+                recipeId = 0,
+                foodId = 0,
+                foodName = name,
+                amountInGrams = grams,
+                calories = (kcal * factor).toInt(),
+                protein = p * factor,
+                carbs = c * factor,
+                fat = f * factor,
+                fiber = fiber * factor,
+                sugar = sugar * factor
+            )
+            _tempIngredients.value = _tempIngredients.value + ingredient
+            clearPreview()
         }
     }
+
 
     fun deleteDiaryEntry(entry: DiaryEntry) {
         viewModelScope.launch { repository.deleteDiaryEntry(entry) }

@@ -1,4 +1,4 @@
-package com.example.nutrition.NutritionUI
+package com.example.nutrition.nutritionUI.barcodeScanner
 
 import android.util.Size
 import androidx.annotation.OptIn

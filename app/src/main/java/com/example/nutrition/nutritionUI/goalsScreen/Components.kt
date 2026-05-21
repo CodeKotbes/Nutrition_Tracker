@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -58,16 +59,17 @@ fun CustomTextField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
     textColor: Color,
     grayText: Color,
-    accentBlue: Color
+    accentBlue: Color,
+    keyboardType: KeyboardType = KeyboardType.Number
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label, color = grayText, fontSize = 12.sp) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         shape = RoundedCornerShape(10.dp),
         modifier = modifier,
         singleLine = true,
@@ -76,4 +78,13 @@ fun CustomTextField(
             focusedBorderColor = accentBlue, unfocusedBorderColor = grayText.copy(alpha = 0.3f)
         )
     )
+}
+
+@Composable
+fun StatusMiniCard(label: String, value: String, unit: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 12.sp, color = Color.Gray)
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = color)
+        Text(unit, fontSize = 10.sp, color = Color.Gray)
+    }
 }

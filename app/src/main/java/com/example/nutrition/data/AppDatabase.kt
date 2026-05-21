@@ -7,11 +7,18 @@ import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
 import com.example.nutrition.model.WaterRecord
+import com.example.nutrition.model.WeightEntry
 
 @Database(
-    entities = [FoodItem::class, DiaryEntry::class, Recipe::class,
-        RecipeIngredient::class, WaterRecord::class],
-    version = 6,
+    entities = [
+        FoodItem::class,
+        DiaryEntry::class,
+        Recipe::class,
+        RecipeIngredient::class,
+        WaterRecord::class,
+        WeightEntry::class
+    ],
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -19,4 +26,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun diaryDao(): DiaryDao
     abstract fun recipeDao(): RecipeDao
     abstract fun waterDao(): WaterDao
+    abstract fun weightDao(): WeightDao
 }

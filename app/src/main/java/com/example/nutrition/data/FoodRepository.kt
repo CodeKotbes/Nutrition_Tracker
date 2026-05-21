@@ -6,6 +6,7 @@ import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
 import com.example.nutrition.model.WaterRecord
+import com.example.nutrition.model.WeightEntry
 import kotlinx.coroutines.flow.Flow
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -21,6 +22,7 @@ class FoodRepository(
     private val diaryDao: DiaryDao,
     private val recipeDao: RecipeDao,
     private val waterDao: WaterDao,
+    private val weightDao: WeightDao,
     private val prefs: SharedPreferences
 ) {
     private val customHttpClient: OkHttpClient = try {
@@ -65,6 +67,8 @@ class FoodRepository(
             .build()
     }
 
+    val allWeights: Flow<List<WeightEntry>> = weightDao.getAllWeights()
+
     suspend fun deleteRecipe(recipe: Recipe) {
         recipeDao.deleteIngredientsForRecipe(recipe.id)
         recipeDao.deleteRecipe(recipe)
@@ -83,6 +87,14 @@ class FoodRepository(
     fun getSavedFatGoal(): Int = prefs.getInt("goal_fat", 80)
     fun getSavedFiberGoal(): Int = prefs.getInt("goal_fiber", 30)
     fun getSavedSugarGoal(): Int = prefs.getInt("goal_sugar", 50)
+
+    suspend fun insertWeight(weight: WeightEntry) {
+        weightDao.insertWeight(weight)
+    }
+
+    suspend fun deleteWeight(weight: WeightEntry) {
+        weightDao.deleteWeight(weight)
+    }
 
     fun saveAllGoals(kcal: Int, protein: Int, carbs: Int, fat: Int, fiber: Int, sugar: Int) {
         prefs.edit()
@@ -178,6 +190,37 @@ class FoodRepository(
 
     fun getEntriesForRange(start: String, end: String): Flow<List<DiaryEntry>> {
         return diaryDao.getEntriesForDateRange(start, end)
+    }
+
+    fun getSavedAge(): String = prefs.getString("calc_age", "") ?: ""
+    fun getSavedHeight(): String = prefs.getString("calc_height", "") ?: ""
+    fun getSavedTargetWeight(): String = prefs.getString("calc_target_weight", "") ?: ""
+    fun getSavedIsMale(): Boolean? =
+        if (prefs.contains("calc_is_male")) prefs.getBoolean("calc_is_male", true) else null
+
+    fun getSavedActivityLevel(): Double? =
+        if (prefs.contains("calc_activity_level")) prefs.getFloat("calc_activity_level", 1.375f)
+            .toDouble() else null
+
+    fun getSavedGoalOffset(): Int? =
+        if (prefs.contains("calc_goal_offset")) prefs.getInt("calc_goal_offset", -500) else null
+
+    fun saveCalculatorInputs(
+        age: String,
+        height: String,
+        targetWeight: String,
+        isMale: Boolean,
+        activityLevel: Double,
+        goalOffset: Int
+    ) {
+        prefs.edit()
+            .putString("calc_age", age)
+            .putString("calc_height", height)
+            .putString("calc_target_weight", targetWeight)
+            .putBoolean("calc_is_male", isMale)
+            .putFloat("calc_activity_level", activityLevel.toFloat())
+            .putInt("calc_goal_offset", goalOffset)
+            .apply()
     }
 
     val allRecipes: Flow<List<Recipe>> = recipeDao.getAllRecipes()

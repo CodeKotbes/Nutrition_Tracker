@@ -36,6 +36,7 @@ import com.example.nutrition.nutritionUI.analysisUI.AnalysisScreen
 import com.example.nutrition.nutritionUI.foodUI.FoodScreen
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
 import com.example.nutrition.nutritionUI.goalsScreen.GoalsScreen
+import com.example.nutrition.nutritionUI.goalsScreen.HealthConnectManager
 import com.example.nutrition.nutritionUI.optionsScreen.OptionsScreen
 import com.example.nutrition.nutritionUI.recipeScreen.RecipeScreen
 import kotlinx.coroutines.launch
@@ -52,11 +53,14 @@ class MainActivity : ComponentActivity() {
 
         val sharedPreferences = getSharedPreferences("NutritionAppPrefs", Context.MODE_PRIVATE)
 
+        val healthConnectManager = HealthConnectManager(applicationContext)
+
         val repository = FoodRepository(
             database.foodItemDao(),
             database.diaryDao(),
             database.recipeDao(),
             database.waterDao(),
+            database.weightDao(),
             sharedPreferences
         )
 
@@ -64,7 +68,7 @@ class MainActivity : ComponentActivity() {
             val viewModel: FoodViewModel = viewModel(factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return FoodViewModel(repository) as T
+                    return FoodViewModel(repository, healthConnectManager) as T
                 }
             })
 

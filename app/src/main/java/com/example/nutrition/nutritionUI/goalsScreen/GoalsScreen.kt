@@ -2,18 +2,11 @@ package com.example.nutrition.nutritionUI.goalsScreen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,26 +15,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.example.nutrition.model.WeightEntry
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
-import kotlinx.coroutines.launch
-import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,7 +36,7 @@ fun GoalsScreen(viewModel: FoodViewModel) {
     val isDark by viewModel.isDarkMode.collectAsState()
     val currentGoal by viewModel.goalKcal.collectAsState()
     val steps by viewModel.currentSteps.collectAsState()
-    val burnedKcal by viewModel.activityKcal.collectAsState()
+    val burnedKcal by viewModel.totalActivityKcal.collectAsState()
     val weightHistory by viewModel.weightHistory.collectAsState()
     val bgColor = if (isDark) Color(0xFF000000) else Color(0xFFF2F2F7)
     val cardColor = if (isDark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)
@@ -71,9 +52,22 @@ fun GoalsScreen(viewModel: FoodViewModel) {
     var selectedGoalOffset by rememberSaveable { mutableStateOf(viewModel.getSavedGoalOffset()) }
     var selectedStartMillis by rememberSaveable { mutableStateOf<Long?>(null) }
     val sortedHistory = weightHistory.sortedBy { it.timestamp }
+    var showLogDialog by rememberSaveable { mutableStateOf(false) }
     val latestWeight = sortedHistory.lastOrNull()?.weight
     val previousWeight =
         if (sortedHistory.size >= 2) sortedHistory[sortedHistory.size - 2].weight else null
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.syncHealthData()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     BackHandler(enabled = currentView != GoalsViewState.OVERVIEW) {
         currentView = GoalsViewState.OVERVIEW
@@ -93,9 +87,29 @@ fun GoalsScreen(viewModel: FoodViewModel) {
                 },
                 navigationIcon = {
                     if (currentView != GoalsViewState.OVERVIEW) {
-                        IconButton(onClick = {
-                            currentView = GoalsViewState.OVERVIEW
-                        }) { Icon(Icons.Default.ArrowBack, "Zurück", tint = accentBlue) }
+                        IconButton(onClick = { currentView = GoalsViewState.OVERVIEW }) {
+                            Icon(Icons.Default.ArrowBack, "Zurück", tint = accentBlue)
+                        }
+                    }
+                },
+                actions = {
+                    if (currentView == GoalsViewState.WEIGHT_DETAIL) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 16.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(accentBlue.copy(alpha = 0.15f))
+                                .clickable { showLogDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                "Eintrag hinzufügen",
+                                tint = accentBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
@@ -137,8 +151,7 @@ fun GoalsScreen(viewModel: FoodViewModel) {
                                         heightInput.toDoubleOrNull() ?: 180.0,
                                         ageInput.toIntOrNull() ?: 25,
                                         selectedActivityLevel!!,
-                                        selectedGoalOffset!!,
-                                        targetWeightInput
+                                        selectedGoalOffset!!
                                     )
                                 }
                             },
@@ -158,31 +171,22 @@ fun GoalsScreen(viewModel: FoodViewModel) {
                             targetWeight = targetWeightInput.toDoubleOrNull(),
                             selectedStartMillis = selectedStartMillis,
                             onStartSelected = { selectedStartMillis = it },
-                            onGoalOffsetChange = {
-                                selectedGoalOffset = it
+                            onGoalOffsetChange = { newOffset ->
+                                selectedGoalOffset = newOffset
                                 if (isMale != null && selectedActivityLevel != null && ageInput.isNotBlank() && heightInput.isNotBlank()) {
                                     viewModel.calculateAndSetGoal(
-                                        isMale!!,
-                                        latestWeight ?: 80.0,
-                                        heightInput.toDoubleOrNull() ?: 180.0,
-                                        ageInput.toIntOrNull() ?: 25,
-                                        selectedActivityLevel!!,
-                                        it,
-                                        targetWeightInput
+                                        isMale = isMale!!,
+                                        weightKg = latestWeight ?: 80.0,
+                                        heightCm = heightInput.toDoubleOrNull() ?: 180.0,
+                                        ageYears = ageInput.toIntOrNull() ?: 25,
+                                        activityLevel = selectedActivityLevel!!,
+                                        goalOffset = newOffset
                                     )
                                 }
                             },
-                            onSetTarget = {
-                                targetWeightInput = it
-                                viewModel.calculateAndSetGoal(
-                                    isMale ?: true,
-                                    latestWeight ?: 80.0,
-                                    heightInput.toDoubleOrNull() ?: 180.0,
-                                    ageInput.toIntOrNull() ?: 25,
-                                    selectedActivityLevel ?: 1.375,
-                                    selectedGoalOffset ?: -500,
-                                    it
-                                )
+                            onSetTarget = { newTarget ->
+                                targetWeightInput = newTarget
+                                viewModel.saveTargetWeight(newTarget)
                             },
                             viewModel = viewModel,
                             cardColor = cardColor,
@@ -194,6 +198,22 @@ fun GoalsScreen(viewModel: FoodViewModel) {
                 }
             }
         }
+    }
+    if (showLogDialog) {
+        WeightLogDateDialog(
+            initialWeight = "",
+            initialDate = System.currentTimeMillis(),
+            title = "Gewicht eintragen",
+            onDismiss = { showLogDialog = false },
+            onConfirm = { w, d ->
+                viewModel.addWeightEntryWithDate(w, d)
+                showLogDialog = false
+            },
+            cardColor = cardColor,
+            textColor = textColor,
+            accentBlue = accentBlue,
+            grayText = grayText
+        )
     }
 }
 
@@ -235,12 +255,6 @@ fun NutritionProgressDashboardCard(
                     fontSize = 18.sp,
                     color = textColor
                 )
-                IconButton(
-                    onClick = onAddLogClick,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(accentBlue.copy(alpha = 0.15f), CircleShape)
-                ) { Icon(Icons.Default.Add, null, tint = accentBlue) }
             }
             Spacer(modifier = Modifier.height(20.dp))
 

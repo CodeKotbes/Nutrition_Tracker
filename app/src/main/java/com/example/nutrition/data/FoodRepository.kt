@@ -7,6 +7,7 @@ import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
 import com.example.nutrition.model.WaterRecord
 import com.example.nutrition.model.WeightEntry
+import com.example.nutrition.model.WorkoutEntry
 import kotlinx.coroutines.flow.Flow
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -23,6 +24,7 @@ class FoodRepository(
     private val recipeDao: RecipeDao,
     private val waterDao: WaterDao,
     private val weightDao: WeightDao,
+    private val workoutDao: WorkoutDao,
     private val prefs: SharedPreferences
 ) {
     private val customHttpClient: OkHttpClient = try {
@@ -105,10 +107,6 @@ class FoodRepository(
             .putInt("goal_fiber", fiber)
             .putInt("goal_sugar", sugar)
             .apply()
-    }
-
-    fun saveGoal(kcal: Int) {
-        prefs.edit().putInt("goal_kcal", kcal).apply()
     }
 
     fun getSavedDarkMode(): Boolean {
@@ -261,5 +259,17 @@ class FoodRepository(
             e.printStackTrace()
             null
         }
+    }
+
+    fun getWorkoutsByDate(date: String): Flow<List<WorkoutEntry>> {
+        return workoutDao.getWorkoutsByDate(date)
+    }
+
+    suspend fun insertWorkout(workout: WorkoutEntry) {
+        workoutDao.insertWorkout(workout)
+    }
+
+    suspend fun deleteWorkout(workout: WorkoutEntry) {
+        workoutDao.deleteWorkout(workout)
     }
 }

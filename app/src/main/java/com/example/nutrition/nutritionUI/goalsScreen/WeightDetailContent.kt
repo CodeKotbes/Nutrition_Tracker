@@ -1,15 +1,7 @@
 package com.example.nutrition.nutritionUI.goalsScreen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,24 +10,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nutrition.model.WeightEntry
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
+import com.example.nutrition.nutritionUI.foodViewModel.ProjectionMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,13 +34,12 @@ fun WeightDetailContent(
     onGoalOffsetChange: (Int) -> Unit, onSetTarget: (String) -> Unit,
     viewModel: FoodViewModel, cardColor: Color, textColor: Color, grayText: Color, accentBlue: Color
 ) {
-    var showLogDialog by remember { mutableStateOf(false) }
     var entryToEdit by remember { mutableStateOf<WeightEntry?>(null) }
     var entryToDelete by remember { mutableStateOf<WeightEntry?>(null) }
     var showTargetDialog by remember { mutableStateOf(false) }
     var showFullscreenGraph by remember { mutableStateOf(false) }
     var showTrendline by remember { mutableStateOf(false) }
-
+    var projectionMode by remember { mutableStateOf(ProjectionMode.MINUS_500) }
     val latestEntry = sortedHistory.lastOrNull()
     val latestWeight = latestEntry?.weight
     val previousWeight =
@@ -80,32 +56,6 @@ fun WeightDetailContent(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    "Abnehmen" to -500,
-                    "Halten" to 0,
-                    "Zunehmen" to 300
-                ).forEach { (label, offsetValue) ->
-                    FilterChip(
-                        selected = goalOffset == offsetValue,
-                        onClick = { onGoalOffsetChange(offsetValue) },
-                        label = { Text(label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = accentBlue,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
-            }
-        }
-
         item {
             NutritionProgressDashboardCard(
                 title = "Dein Fortschritt",
@@ -116,7 +66,7 @@ fun WeightDetailContent(
                 targetValue = targetWeight,
                 goalOffset = goalOffset,
                 onSetTargetClick = { showTargetDialog = true },
-                onAddLogClick = { showLogDialog = true },
+                onAddLogClick = {},
                 availableEntries = availableEntries,
                 onStartSelected = onStartSelected,
                 cardColor = cardColor,
@@ -126,7 +76,7 @@ fun WeightDetailContent(
             )
         }
 
-        if (sortedHistory.size > 1) {
+        if (sortedHistory.isNotEmpty()) {
             item {
                 Column(
                     modifier = Modifier
@@ -146,9 +96,7 @@ fun WeightDetailContent(
                             fontSize = 18.sp,
                             color = textColor
                         )
-                        IconButton(onClick = {
-                            showFullscreenGraph = true
-                        }) {
+                        IconButton(onClick = { showFullscreenGraph = true }) {
                             Icon(
                                 Icons.Default.Fullscreen,
                                 contentDescription = "Vollbild",
@@ -157,31 +105,53 @@ fun WeightDetailContent(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    val projectedHistory =
+                        if (showTrendline) viewModel.getProjectedWeightPath(projectionMode) else emptyList()
+
                     AdvancedWeightGraph(
-                        sortedHistory,
-                        targetWeight,
-                        if (showTrendline) goalOffset else null,
-                        Modifier
+                        historyPoints = sortedHistory,
+                        projectedPoints = projectedHistory,
+                        targetWeight = targetWeight,
+                        modifier = Modifier
                             .fillMaxWidth()
                             .height(240.dp),
-                        accentBlue,
-                        textColor,
-                        grayText,
-                        cardColor
+                        accentBlue = accentBlue,
+                        textColor = textColor,
+                        grayText = grayText,
+                        cardColor = cardColor
                     )
 
-                    if (goalOffset != null && goalOffset != 0) {
-                        Spacer(modifier = Modifier.height(20.dp))
-                        OutlinedButton(
-                            onClick = { showTrendline = !showTrendline },
+                    Spacer(modifier = Modifier.height(20.dp))
+                    OutlinedButton(
+                        onClick = { showTrendline = !showTrendline },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            if (showTrendline) "Theoretischen Pfad ausblenden" else "Theoretischen Pfad anzeigen",
+                            color = accentBlue,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (showTrendline) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                if (showTrendline) "Theoretischen Pfad ausblenden" else "Theoretischen Pfad anzeigen",
-                                color = accentBlue,
-                                fontWeight = FontWeight.Bold
-                            )
+                            ProjectionMode.values().forEach { mode ->
+                                FilterChip(
+                                    selected = projectionMode == mode,
+                                    onClick = { projectionMode = mode },
+                                    label = { Text(mode.label, fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFFFF9F0A),
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -221,11 +191,7 @@ fun WeightDetailContent(
                 }
                 Box {
                     IconButton(onClick = { showMenu = true }) {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            "Optionen",
-                            tint = grayText
-                        )
+                        Icon(Icons.Default.MoreVert, "Optionen", tint = grayText)
                     }
                     DropdownMenu(
                         expanded = showMenu,
@@ -235,12 +201,14 @@ fun WeightDetailContent(
                         DropdownMenuItem(
                             text = { Text("Bearbeiten", color = textColor) },
                             leadingIcon = { Icon(Icons.Default.Edit, null, tint = accentBlue) },
-                            onClick = { showMenu = false; entryToEdit = entry })
+                            onClick = { showMenu = false; entryToEdit = entry }
+                        )
                         HorizontalDivider(color = grayText.copy(alpha = 0.2f))
                         DropdownMenuItem(
                             text = { Text("Löschen", color = Color.Red) },
                             leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color.Red) },
-                            onClick = { showMenu = false; entryToDelete = entry })
+                            onClick = { showMenu = false; entryToDelete = entry }
+                        )
                     }
                 }
             }
@@ -248,19 +216,6 @@ fun WeightDetailContent(
         item { Spacer(modifier = Modifier.height(32.dp)) }
     }
 
-    if (showLogDialog) {
-        WeightLogDateDialog(
-            "",
-            System.currentTimeMillis(),
-            "Gewicht eintragen",
-            { showLogDialog = false },
-            { w, d -> viewModel.addWeightEntryWithDate(w, d); showLogDialog = false },
-            cardColor,
-            textColor,
-            accentBlue,
-            grayText
-        )
-    }
     if (entryToEdit != null) {
         WeightLogDateDialog(
             entryToEdit!!.weight.toString(),
@@ -268,12 +223,10 @@ fun WeightDetailContent(
             "Eintrag bearbeiten",
             { entryToEdit = null },
             { w, d -> viewModel.updateWeightEntry(entryToEdit!!, w, d); entryToEdit = null },
-            cardColor,
-            textColor,
-            accentBlue,
-            grayText
+            cardColor, textColor, accentBlue, grayText
         )
     }
+
     if (entryToDelete != null) {
         AlertDialog(
             onDismissRequest = { entryToDelete = null }, containerColor = cardColor,
@@ -288,10 +241,7 @@ fun WeightDetailContent(
                 Button(onClick = {
                     viewModel.deleteWeightEntry(entryToDelete!!); entryToDelete = null
                 }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
-                    Text(
-                        "Löschen",
-                        color = Color.White
-                    )
+                    Text("Löschen", color = Color.White)
                 }
             },
             dismissButton = {
@@ -304,6 +254,7 @@ fun WeightDetailContent(
             }
         )
     }
+
     if (showTargetDialog) {
         var input by remember { mutableStateOf(targetWeight?.toString() ?: "") }
         AlertDialog(
@@ -325,7 +276,8 @@ fun WeightDetailContent(
                 Button(
                     onClick = {
                         input.replace(",", ".").toDoubleOrNull()
-                            ?.let { onSetTarget(it.toString()) }; showTargetDialog = false
+                            ?.let { onSetTarget(it.toString()) }
+                        showTargetDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
                 ) { Text("Speichern", color = Color.White) }
@@ -340,16 +292,19 @@ fun WeightDetailContent(
             }
         )
     }
+
     if (showFullscreenGraph) {
+        val projectedHistory =
+            if (showTrendline) viewModel.getProjectedWeightPath(projectionMode) else emptyList()
         FullscreenWeightGraphDialog(
-            sortedHistory,
-            targetWeight,
-            if (showTrendline) goalOffset else null,
-            { showFullscreenGraph = false },
-            cardColor,
-            textColor,
-            grayText,
-            accentBlue
+            historyPoints = sortedHistory,
+            projectedPoints = projectedHistory,
+            targetWeight = targetWeight,
+            onClose = { showFullscreenGraph = false },
+            cardColor = cardColor,
+            textColor = textColor,
+            grayText = grayText,
+            accentBlue = accentBlue
         )
     }
 }

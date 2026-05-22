@@ -4,16 +4,19 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -50,9 +53,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -63,194 +66,242 @@ import com.example.nutrition.model.WeightEntry
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.abs
 
 @Composable
 fun AdvancedWeightGraph(
-    dataPoints: List<WeightEntry>, targetWeight: Double?, trendOffset: Int?,
-    modifier: Modifier, accentBlue: Color, textColor: Color, grayText: Color, cardColor: Color
+    historyPoints: List<WeightEntry>,
+    projectedPoints: List<WeightEntry>,
+    targetWeight: Double?,
+    modifier: Modifier = Modifier,
+    zoomScale: Float = 1f,
+    accentBlue: Color,
+    textColor: Color,
+    grayText: Color,
+    cardColor: Color
 ) {
+    if (historyPoints.isEmpty()) return
+
+    val uniqueHistory =
+        historyPoints.groupBy { it.date }.map { it.value.last() }.sortedBy { it.timestamp }
+    val allPoints = uniqueHistory + projectedPoints
+    val minWeight = ((allPoints.minOfOrNull { it.weight } ?: 60.0).coerceAtMost(
+        targetWeight ?: Double.MAX_VALUE
+    )) - 1.0
+    val maxWeight = ((allPoints.maxOfOrNull { it.weight } ?: 100.0).coerceAtLeast(
+        targetWeight ?: Double.MIN_VALUE
+    )) + 1.0
+    val range = (maxWeight - minWeight).coerceAtLeast(1.0)
+    val firstTimestamp = uniqueHistory.first().timestamp
+    val msPerDay = 24L * 60 * 60 * 1000
+    val lastTimestamp =
+        if (projectedPoints.isNotEmpty()) projectedPoints.last().timestamp else uniqueHistory.last().timestamp
+    val totalDays = (((lastTimestamp - firstTimestamp) / msPerDay).toInt() + 1).coerceAtLeast(1)
+
+    val dayWidthPx = 150f * zoomScale
+    val density = LocalContext.current.resources.displayMetrics.density
+    val totalWidthDp = ((totalDays * dayWidthPx) / density).dp
+
     var selectedPoint by remember { mutableStateOf<WeightEntry?>(null) }
     var tapOffset by remember { mutableStateOf<Offset?>(null) }
 
-    val minWeight =
-        (dataPoints.minOf { it.weight }.coerceAtMost(targetWeight ?: Double.MAX_VALUE)) - 1.0
-    val maxWeight =
-        (dataPoints.maxOf { it.weight }.coerceAtLeast(targetWeight ?: Double.MIN_VALUE)) + 1.0
-    val range = (maxWeight - minWeight).coerceAtLeast(1.0)
-    val earliestTime = dataPoints.first().timestamp
-    val latestTime = dataPoints.last().timestamp
-    val timeRange = (latestTime - earliestTime).coerceAtLeast(1L).toFloat()
-
-    Box(modifier = modifier.pointerInput(dataPoints) {
-        detectTapGestures { tap ->
-            tapOffset = tap
-        }
-    }) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
+    Row(modifier = modifier) {
+        Canvas(
+            modifier = Modifier
+                .width(45.dp)
+                .fillMaxHeight()
+        ) {
             val height = size.height - 40.dp.toPx()
-            val paddingX = 40.dp.toPx()
-            val graphWidth = width - (paddingX * 2)
-
-            val textPaint = android.graphics.Paint().apply {
-                color =
-                    if (textColor == Color.White) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY; textSize =
-                10.sp.toPx(); isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER
-            }
             val textPaintY = android.graphics.Paint().apply {
                 color =
-                    if (textColor == Color.White) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY; textSize =
-                10.sp.toPx(); isAntiAlias = true
+                    if (textColor == Color.White) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                textSize = 10.sp.toPx()
+                isAntiAlias = true
             }
-
             val stepY = range / 4
             for (i in 0..4) {
                 val valueY = minWeight + (i * stepY)
                 val y = height - (((valueY - minWeight) / range) * height).toFloat()
-                drawLine(
-                    color = grayText.copy(alpha = 0.2f),
-                    start = Offset(0f, y),
-                    end = Offset(width, y),
-                    strokeWidth = 1.dp.toPx()
-                )
                 drawContext.canvas.nativeCanvas.drawText(
-                    String.format(
-                        Locale.US,
-                        "%.1f kg",
-                        valueY
-                    ), 5f, y - 5f, textPaintY
-                )
-            }
-
-            if (targetWeight != null) {
-                val targetY = height - (((targetWeight - minWeight) / range) * height).toFloat()
-                drawLine(
-                    color = Color(0xFF30D158),
-                    start = Offset(0f, targetY),
-                    end = Offset(width, targetY),
-                    strokeWidth = 2.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
-                )
-            }
-
-            val path = Path()
-            val pointPositions = mutableListOf<Pair<Offset, WeightEntry>>()
-            val sdf = SimpleDateFormat("dd.MM", Locale.getDefault())
-
-            dataPoints.forEachIndexed { index, entry ->
-                val ratio =
-                    if (timeRange > 0) ((entry.timestamp - earliestTime) / timeRange) else 0.5f
-                val x = paddingX + (ratio * graphWidth)
-                val y = height - (((entry.weight - minWeight) / range) * height).toFloat()
-
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                pointPositions.add(Offset(x, y) to entry)
-            }
-
-            drawPath(
-                path = path,
-                color = accentBlue,
-                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-            )
-
-            if (dataPoints.isNotEmpty()) {
-                val bottomY = height + 20.dp.toPx()
-
-                val firstX = pointPositions.first().first.x
-                drawContext.canvas.nativeCanvas.drawText(
-                    sdf.format(Date(dataPoints.first().timestamp)),
-                    firstX,
-                    bottomY,
-                    textPaint
-                )
-
-                if (dataPoints.size > 1) {
-                    val lastX = pointPositions.last().first.x
-                    drawContext.canvas.nativeCanvas.drawText(
-                        sdf.format(Date(dataPoints.last().timestamp)),
-                        lastX,
-                        bottomY,
-                        textPaint
-                    )
-                }
-
-                if (dataPoints.size >= 3) {
-                    val midIndex = dataPoints.size / 2
-                    val midX = pointPositions[midIndex].first.x
-                    drawContext.canvas.nativeCanvas.drawText(
-                        sdf.format(Date(dataPoints[midIndex].timestamp)),
-                        midX,
-                        bottomY,
-                        textPaint
-                    )
-                }
-            }
-
-            pointPositions.forEach { (offset, _) ->
-                drawCircle(color = cardColor, radius = 6.dp.toPx(), center = offset)
-                drawCircle(color = accentBlue, radius = 4.dp.toPx(), center = offset)
-            }
-
-            if (tapOffset != null) {
-                val closestPoint =
-                    pointPositions.minByOrNull { (abs(it.first.x - tapOffset!!.x) + abs(it.first.y - tapOffset!!.y)) }
-                if (closestPoint != null && abs(closestPoint.first.x - tapOffset!!.x) < 50.dp.toPx() && abs(
-                        closestPoint.first.y - tapOffset!!.y
-                    ) < 50.dp.toPx()
-                ) {
-                    selectedPoint = closestPoint.second
-                    drawCircle(
-                        color = accentBlue.copy(alpha = 0.3f),
-                        radius = 14.dp.toPx(),
-                        center = closestPoint.first
-                    )
-                } else {
-                    selectedPoint = null
-                }
-            }
-
-            if (trendOffset != null && trendOffset != 0) {
-                val dailyChangeKg = trendOffset / 7000.0
-                val projectionDays = 30
-                val projectionTimeMillis = projectionDays * 24L * 60 * 60 * 1000
-                val startX = pointPositions.last().first.x
-                val startY = pointPositions.last().first.y
-                val extraTimeRange = timeRange + projectionTimeMillis
-                val projectedRatio =
-                    ((latestTime + projectionTimeMillis - earliestTime) / extraTimeRange)
-                val projectedX = startX + ((projectionTimeMillis / extraTimeRange) * graphWidth)
-
-                val projectedWeight = dataPoints.last().weight + (dailyChangeKg * projectionDays)
-                val projectedY =
-                    height - (((projectedWeight - minWeight) / range) * height).toFloat()
-
-                drawLine(
-                    color = Color(0xFFFF9F0A),
-                    start = Offset(startX, startY),
-                    end = Offset(projectedX, projectedY),
-                    strokeWidth = 3.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f))
+                    String.format(Locale.US, "%.1f kg", valueY), 5f, y + 4f, textPaintY
                 )
             }
         }
 
-        if (selectedPoint != null) {
-            val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-            Box(
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .horizontalScroll(rememberScrollState())
+        ) {
+            Canvas(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(textColor.copy(alpha = 0.9f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .width(totalWidthDp)
+                    .fillMaxHeight()
+                    .pointerInput(allPoints) {
+                        detectTapGestures { tap -> tapOffset = tap }
+                    }
             ) {
-                Text(
-                    "${selectedPoint!!.weight} kg (${sdf.format(Date(selectedPoint!!.timestamp))})",
-                    color = cardColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                val height = size.height - 40.dp.toPx()
+                val width = size.width
+                val textPaintX = android.graphics.Paint().apply {
+                    color =
+                        if (textColor == Color.White) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                    textSize = 10.sp.toPx()
+                    isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.CENTER
+                }
+
+                val stepY = range / 4
+                for (i in 0..4) {
+                    val valueY = minWeight + (i * stepY)
+                    val y = height - (((valueY - minWeight) / range) * height).toFloat()
+                    drawLine(
+                        color = grayText.copy(alpha = 0.1f),
+                        start = Offset(0f, y),
+                        end = Offset(width, y),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+
+                if (targetWeight != null) {
+                    val targetY = height - (((targetWeight - minWeight) / range) * height).toFloat()
+                    drawLine(
+                        color = Color(0xFF30D158),
+                        start = Offset(0f, targetY),
+                        end = Offset(width, targetY),
+                        strokeWidth = 1.5.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
+                    )
+                }
+
+                fun getXForTimestamp(ts: Long): Float {
+                    val dayIndex = ((ts - firstTimestamp) / msPerDay).toFloat()
+                    return dayIndex * dayWidthPx + (dayWidthPx / 2f)
+                }
+
+                fun getYForWeight(w: Double): Float {
+                    return height - (((w - minWeight) / range) * height).toFloat()
+                }
+
+                val historyPath = Path()
+                val historyPositions = mutableListOf<Offset>()
+                val sdfX = SimpleDateFormat("dd.MM", Locale.getDefault())
+
+                uniqueHistory.forEachIndexed { index, entry ->
+                    val x = getXForTimestamp(entry.timestamp)
+                    val y = getYForWeight(entry.weight)
+                    historyPositions.add(Offset(x, y))
+
+                    if (index == 0) historyPath.moveTo(x, y) else historyPath.lineTo(x, y)
+                    drawContext.canvas.nativeCanvas.drawText(
+                        sdfX.format(Date(entry.timestamp)), x, height + 20.dp.toPx(), textPaintX
+                    )
+                }
+
+                if (uniqueHistory.size > 1) {
+                    drawPath(
+                        path = historyPath,
+                        color = accentBlue,
+                        style = Stroke(
+                            width = 3.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+                }
+
+                historyPositions.forEach { offset ->
+                    drawCircle(color = cardColor, radius = 5.dp.toPx(), center = offset)
+                    drawCircle(color = accentBlue, radius = 3.dp.toPx(), center = offset)
+                }
+
+                if (projectedPoints.isNotEmpty() && uniqueHistory.isNotEmpty()) {
+                    val projectedPath = Path()
+                    val startX = getXForTimestamp(uniqueHistory.last().timestamp)
+                    val startY = getYForWeight(uniqueHistory.last().weight)
+                    projectedPath.moveTo(startX, startY)
+
+                    projectedPoints.forEach { entry ->
+                        val x = getXForTimestamp(entry.timestamp)
+                        val y = getYForWeight(entry.weight)
+                        projectedPath.lineTo(x, y)
+
+                        drawCircle(color = cardColor, radius = 5.dp.toPx(), center = Offset(x, y))
+                        drawCircle(
+                            color = Color(0xFFFF9F0A),
+                            radius = 3.dp.toPx(),
+                            center = Offset(x, y)
+                        )
+
+                        val dayIndex = ((entry.timestamp - firstTimestamp) / msPerDay).toInt()
+                        if (dayIndex % 3 == 0 || entry == projectedPoints.last()) {
+                            drawContext.canvas.nativeCanvas.drawText(
+                                sdfX.format(Date(entry.timestamp)),
+                                x,
+                                height + 20.dp.toPx(),
+                                textPaintX
+                            )
+                        }
+                    }
+
+                    drawPath(
+                        path = projectedPath,
+                        color = Color(0xFFFF9F0A),
+                        style = Stroke(
+                            width = 2.5.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f))
+                        )
+                    )
+                }
+
+                if (tapOffset != null) {
+                    val closestPoint = allPoints.minByOrNull { entry ->
+                        val dx = getXForTimestamp(entry.timestamp) - tapOffset!!.x
+                        val dy = getYForWeight(entry.weight) - tapOffset!!.y
+                        dx * dx + dy * dy
+                    }
+                    if (closestPoint != null) {
+                        val cx = getXForTimestamp(closestPoint.timestamp)
+                        val cy = getYForWeight(closestPoint.weight)
+                        val distance =
+                            kotlin.math.sqrt((cx - tapOffset!!.x) * (cx - tapOffset!!.x) + (cy - tapOffset!!.y) * (cy - tapOffset!!.y))
+
+                        if (distance < 40.dp.toPx()) {
+                            selectedPoint = closestPoint
+                            drawCircle(
+                                color = (if (projectedPoints.contains(closestPoint)) Color(
+                                    0xFFFF9F0A
+                                ) else accentBlue).copy(alpha = 0.25f),
+                                radius = 12.dp.toPx(),
+                                center = Offset(cx, cy)
+                            )
+                        } else {
+                            selectedPoint = null
+                        }
+                    }
+                }
+            }
+
+            if (selectedPoint != null) {
+                val sdfTooltip = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+                val isProjected = projectedPoints.contains(selectedPoint!!)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(textColor.copy(alpha = 0.9f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${selectedPoint!!.weight} kg (${sdfTooltip.format(Date(selectedPoint!!.timestamp))})${if (isProjected) "" else ""}",
+                        color = cardColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -346,11 +397,14 @@ fun WeightLogDateDialog(
 
 @Composable
 fun FullscreenWeightGraphDialog(
-    dataPoints: List<WeightEntry>, targetWeight: Double?, trendOffset: Int?, onClose: () -> Unit,
+    historyPoints: List<WeightEntry>,
+    projectedPoints: List<WeightEntry>,
+    targetWeight: Double?,
+    onClose: () -> Unit,
     cardColor: Color, textColor: Color, grayText: Color, accentBlue: Color
 ) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var zoomScale by remember { mutableStateOf(1f) }
+
     Dialog(
         onDismissRequest = onClose,
         properties = DialogProperties(
@@ -370,20 +424,18 @@ fun FullscreenWeightGraphDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Gewichtsverlauf (Vollbild)",
+                        "Gewichtsverlauf",
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
                         color = textColor
                     )
                     IconButton(onClick = onClose) {
-                        Icon(
-                            Icons.Default.Close,
-                            "Schließen",
-                            tint = textColor
-                        )
+                        Icon(Icons.Default.Close, "Schließen", tint = textColor)
                     }
                 }
+
                 Spacer(modifier = Modifier.height(32.dp))
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -391,32 +443,23 @@ fun FullscreenWeightGraphDialog(
                         .clip(RoundedCornerShape(16.dp))
                         .background(grayText.copy(alpha = 0.05f))
                         .pointerInput(Unit) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 5f);
-                                val maxPan = (scale - 1) * 400f; offset = Offset(
-                                (offset.x + pan.x).coerceIn(-maxPan, maxPan),
-                                (offset.y + pan.y).coerceIn(-maxPan, maxPan)
-                            )
+                            detectTransformGestures { _, _, zoom, _ ->
+                                zoomScale = (zoomScale * zoom).coerceIn(0.2f, 4f)
                             }
                         }
                 ) {
                     AdvancedWeightGraph(
-                        dataPoints,
-                        targetWeight,
-                        trendOffset,
-                        Modifier
+                        historyPoints = historyPoints,
+                        projectedPoints = projectedPoints,
+                        targetWeight = targetWeight,
+                        modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y
-                            )
                             .padding(16.dp),
-                        accentBlue,
-                        textColor,
-                        grayText,
-                        cardColor
+                        zoomScale = zoomScale,
+                        accentBlue = accentBlue,
+                        textColor = textColor,
+                        grayText = grayText,
+                        cardColor = cardColor
                     )
                 }
             }

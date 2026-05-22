@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
             database.recipeDao(),
             database.waterDao(),
             database.weightDao(),
+            database.workoutDao(),
             sharedPreferences
         )
 

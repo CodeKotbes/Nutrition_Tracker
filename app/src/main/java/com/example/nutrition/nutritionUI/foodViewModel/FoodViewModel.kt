@@ -9,6 +9,8 @@ import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
 import com.example.nutrition.model.WaterRecord
 import com.example.nutrition.model.WeightEntry
+import com.example.nutrition.model.WorkoutEntry
+import kotlinx.coroutines.flow.combine
 import com.example.nutrition.nutritionUI.goalsScreen.HealthConnectManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -17,7 +19,16 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-class FoodViewModel(private val repository: FoodRepository, val healthConnectManager: HealthConnectManager) : ViewModel() {
+enum class ProjectionMode(val label: String) {
+    CURRENT("Aktuell"),
+    MINUS_500("-500 kcal"),
+    MINUS_1000("-1000 kcal")
+}
+
+class FoodViewModel(
+    private val repository: FoodRepository,
+    val healthConnectManager: HealthConnectManager
+) : ViewModel() {
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
@@ -99,12 +110,103 @@ class FoodViewModel(private val repository: FoodRepository, val healthConnectMan
                 syncHealthData()
             }
         }
+        viewModelScope.launch {
+            weightHistory.collect { history ->
+                val latestWeight = history.sortedBy { it.timestamp }.lastOrNull()?.weight
+                if (latestWeight != null) {
+                    autoRecalculateGoal(latestWeight)
+                }
+            }
+        }
     }
+
+    private fun autoRecalculateGoal(newWeight: Double) {
+        val age = repository.getSavedAge().toIntOrNull()
+        val height = repository.getSavedHeight().toDoubleOrNull()
+        val isMale = repository.getSavedIsMale()
+        val activityLevel = repository.getSavedActivityLevel()
+        val goalOffset = repository.getSavedGoalOffset()
+
+        if (age != null && height != null && isMale != null && activityLevel != null && goalOffset != null) {
+            calculateAndSetGoal(
+                isMale = isMale,
+                weightKg = newWeight,
+                heightCm = height,
+                ageYears = age,
+                activityLevel = activityLevel,
+                goalOffset = goalOffset
+            )
+        }
+    }
+
+    fun saveTargetWeight(weight: String) {
+        repository.saveCalculatorInputs(
+            age = getSavedAge(),
+            height = getSavedHeight(),
+            targetWeight = weight,
+            isMale = getSavedIsMale() ?: true,
+            activityLevel = getSavedActivityLevel() ?: 1.2,
+            goalOffset = getSavedGoalOffset() ?: -500
+        )
+    }
+
+    fun getBmr(): Double {
+        val history = weightHistory.value.sortedBy { it.timestamp }
+        val latestWeight = history.lastOrNull()?.weight ?: 80.0
+        val age = repository.getSavedAge().toIntOrNull() ?: 25
+        val height = repository.getSavedHeight().toDoubleOrNull() ?: 180.0
+        val isMale = repository.getSavedIsMale() ?: true
+
+        return if (isMale) {
+            (10 * latestWeight) + (6.25 * height) - (5 * age) + 5
+        } else {
+            (10 * latestWeight) + (6.25 * height) - (5 * age) - 161
+        }
+    }
+
+    fun getProjectedWeightPath(mode: ProjectionMode): List<WeightEntry> {
+        val history = weightHistory.value.sortedBy { it.timestamp }
+        val latestEntry = history.lastOrNull() ?: return emptyList()
+
+        val dailyBalance = when (mode) {
+            ProjectionMode.CURRENT -> {
+                val bmr = getBmr()
+                val totalActivity = _activityKcal.value + localWorkouts.value.sumOf { it.calories }
+                val consumption = bmr + totalActivity
+                (_goalKcal.value - consumption).toDouble()
+            }
+
+            ProjectionMode.MINUS_500 -> -500.0
+            ProjectionMode.MINUS_1000 -> -1000.0
+        }
+
+        val dailyChangeKg = dailyBalance / 7000.0
+
+        val projectionList = mutableListOf<WeightEntry>()
+        var currentWeight = latestEntry.weight
+        var currentTimestamp = latestEntry.timestamp
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+
+        for (i in 1..60) {
+            currentWeight += dailyChangeKg
+            currentTimestamp += 24L * 60 * 60 * 1000 // +1 Tag
+
+            val entry = WeightEntry(
+                weight = String.format(Locale.US, "%.1f", currentWeight).toDouble(),
+                date = sdf.format(Date(currentTimestamp)),
+                timestamp = currentTimestamp
+            )
+            projectionList.add(entry)
+        }
+
+        return projectionList
+    }
+
 
     fun syncHealthData() {
         viewModelScope.launch {
             if (healthConnectManager.isAvailable && healthConnectManager.hasAllPermissions()) {
-                val stats = healthConnectManager.getTodayHealthStats()
+                val stats = healthConnectManager.getHealthStatsForDate(_currentDate.value)
                 _currentSteps.value = stats.first
                 _activityKcal.value = stats.second
             } else {
@@ -120,49 +222,6 @@ class FoodViewModel(private val repository: FoodRepository, val healthConnectMan
     fun getSavedIsMale() = repository.getSavedIsMale()
     fun getSavedActivityLevel() = repository.getSavedActivityLevel()
     fun getSavedGoalOffset() = repository.getSavedGoalOffset()
-
-    fun calculateAndSetGoal(
-        isMale: Boolean, weightKg: Double, heightCm: Double, ageYears: Int,
-        activityLevel: Double, goalOffset: Int, targetWeightStr: String
-    ) {
-        val bmr = if (isMale) {
-            (10 * weightKg) + (6.25 * heightCm) - (5 * ageYears) + 5
-        } else {
-            (10 * weightKg) + (6.25 * heightCm) - (5 * ageYears) - 161
-        }
-        val tdee = bmr * activityLevel
-        var finalKcal = (tdee + goalOffset).toInt()
-
-        if (finalKcal < 1200) finalKcal = 1200
-
-        val protein = (finalKcal * 0.30 / 4).toInt()
-        val carbs = (finalKcal * 0.40 / 4).toInt()
-        val fat = (finalKcal * 0.30 / 9).toInt()
-        val fiber = 30
-        val sugar = 50
-
-        repository.saveCalculatorInputs(
-            age = ageYears.toString(),
-            height = heightCm.toString(),
-            targetWeight = targetWeightStr,
-            isMale = isMale,
-            activityLevel = activityLevel,
-            goalOffset = goalOffset
-        )
-
-        updateAllGoals(finalKcal, protein, carbs, fat, fiber, sugar)
-    }
-
-    fun addWeightEntry(weight: Double) {
-        viewModelScope.launch {
-            val entry = WeightEntry(
-                weight = weight,
-                date = _currentDate.value,
-                timestamp = System.currentTimeMillis()
-            )
-            repository.insertWeight(entry)
-        }
-    }
 
     fun toggleDarkMode() {
         val newValue = !_isDarkMode.value
@@ -194,8 +253,22 @@ class FoodViewModel(private val repository: FoodRepository, val healthConnectMan
 
         if (finalKcal < 1200) finalKcal = 1200
 
-        _goalKcal.value = finalKcal
-        repository.saveGoal(finalKcal)
+        val protein = (finalKcal * 0.30 / 4).toInt()
+        val carbs = (finalKcal * 0.40 / 4).toInt()
+        val fat = (finalKcal * 0.30 / 9).toInt()
+        val fiber = 30
+        val sugar = 50
+
+        repository.saveCalculatorInputs(
+            age = ageYears.toString(),
+            height = heightCm.toString(),
+            targetWeight = "",
+            isMale = isMale,
+            activityLevel = activityLevel,
+            goalOffset = goalOffset
+        )
+
+        updateAllGoals(finalKcal, protein, carbs, fat, fiber, sugar)
     }
 
     fun addWaterRecord(amount: Int) {
@@ -336,22 +409,6 @@ class FoodViewModel(private val repository: FoodRepository, val healthConnectMan
         }
     }
 
-    fun updateDiaryEntryGrams(entry: DiaryEntry, newGrams: Double) {
-        viewModelScope.launch {
-            val ratio = newGrams / entry.amountInGrams
-            val updatedEntry = entry.copy(
-                amountInGrams = newGrams,
-                calories = (entry.calories * ratio).toInt(),
-                protein = entry.protein * ratio,
-                carbs = entry.carbs * ratio,
-                fat = entry.fat * ratio,
-                fiber = entry.fiber * ratio,
-                sugar = entry.sugar * ratio
-            )
-            repository.insertDiaryEntry(updatedEntry)
-        }
-    }
-
     fun addRecipeToDiary(recipe: Recipe, mealType: String) {
         viewModelScope.launch {
             val ingredients = repository.getIngredientsForRecipe(recipe.id)
@@ -457,15 +514,29 @@ class FoodViewModel(private val repository: FoodRepository, val healthConnectMan
 
     fun addWeightEntryWithDate(weight: Double, dateMillis: Long) {
         viewModelScope.launch {
-            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(dateMillis))
-            repository.insertWeight(WeightEntry(weight = weight, date = dateStr, timestamp = dateMillis))
+            val dateStr =
+                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(dateMillis))
+            repository.insertWeight(
+                WeightEntry(
+                    weight = weight,
+                    date = dateStr,
+                    timestamp = dateMillis
+                )
+            )
         }
     }
 
     fun updateWeightEntry(entry: WeightEntry, newWeight: Double, newDateMillis: Long) {
         viewModelScope.launch {
-            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(newDateMillis))
-            repository.insertWeight(entry.copy(weight = newWeight, date = dateStr, timestamp = newDateMillis))
+            val dateStr =
+                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(newDateMillis))
+            repository.insertWeight(
+                entry.copy(
+                    weight = newWeight,
+                    date = dateStr,
+                    timestamp = newDateMillis
+                )
+            )
         }
     }
 
@@ -475,18 +546,46 @@ class FoodViewModel(private val repository: FoodRepository, val healthConnectMan
         }
     }
 
-    fun updateRecipeIngredientGrams(ingredient: RecipeIngredient, newGrams: Double) {
-        val ratio = newGrams / ingredient.amountInGrams
-        val updatedIngredient = ingredient.copy(
-            amountInGrams = newGrams,
-            calories = (ingredient.calories * ratio).toInt(),
-            protein = ingredient.protein * ratio,
-            carbs = ingredient.carbs * ratio,
-            fat = ingredient.fat * ratio,
-            fiber = ingredient.fiber * ratio,
-            sugar = ingredient.sugar * ratio
-        )
-        _tempIngredients.value =
-            _tempIngredients.value.map { if (it == ingredient) updatedIngredient else it }
+    val localWorkouts: StateFlow<List<WorkoutEntry>> = _currentDate
+        .flatMapLatest { date -> repository.getWorkoutsByDate(date) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val totalActivityKcal: StateFlow<Int> =
+        combine(_activityKcal, localWorkouts) { hcKcal, workouts ->
+            hcKcal + workouts.sumOf { it.calories }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    fun addManualWorkout(name: String, calories: Int, duration: Int) {
+        viewModelScope.launch {
+            val newWorkout = WorkoutEntry(
+                name = name,
+                calories = calories,
+                durationMinutes = duration,
+                date = _currentDate.value,
+                timestamp = System.currentTimeMillis()
+            )
+            repository.insertWorkout(newWorkout)
+        }
+    }
+
+    fun deleteWorkout(workout: WorkoutEntry) {
+        viewModelScope.launch {
+            repository.deleteWorkout(workout)
+        }
+    }
+
+    fun updateManualWorkout(
+        workout: WorkoutEntry,
+        newName: String,
+        newCalories: Int,
+        newDuration: Int
+    ) {
+        viewModelScope.launch {
+            val updatedWorkout = workout.copy(
+                name = newName,
+                calories = newCalories,
+                durationMinutes = newDuration
+            )
+            repository.insertWorkout(updatedWorkout)
+        }
     }
 }

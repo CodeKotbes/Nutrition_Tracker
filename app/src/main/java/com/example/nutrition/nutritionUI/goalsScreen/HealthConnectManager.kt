@@ -33,6 +33,7 @@ class HealthConnectManager(private val context: Context) {
     }
 
     fun getPermissionContract() = PermissionController.createRequestPermissionResultContract()
+
     suspend fun getTodayHealthStats(): Pair<Int, Int> {
         if (!isAvailable || !hasAllPermissions()) return Pair(0, 0)
 
@@ -41,31 +42,7 @@ class HealthConnectManager(private val context: Context) {
             ZonedDateTime.now(ZoneId.systemDefault()).truncatedTo(ChronoUnit.DAYS).toInstant()
         val timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
 
-        var totalSteps = 0
-        var totalKcal = 0
-
-        try {
-            val stepsRequest = AggregateRequest(
-                metrics = setOf(StepsRecord.COUNT_TOTAL),
-                timeRangeFilter = timeRangeFilter
-            )
-            val stepsResponse = healthConnectClient.aggregate(stepsRequest)
-            totalSteps = (stepsResponse[StepsRecord.COUNT_TOTAL] ?: 0L).toInt()
-
-            val kcalRequest = AggregateRequest(
-                metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
-                timeRangeFilter = timeRangeFilter
-            )
-            val kcalResponse = healthConnectClient.aggregate(kcalRequest)
-            totalKcal =
-                (kcalResponse[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
-                    ?: 0.0).toInt()
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        return Pair(totalSteps, totalKcal)
+        return fetchStats(timeRangeFilter)
     }
 
     suspend fun getHealthStatsForDate(dateString: String): Pair<Int, Int> {
@@ -76,17 +53,28 @@ class HealthConnectManager(private val context: Context) {
             val startOfDay = localDate.atStartOfDay(ZoneId.systemDefault()).toInstant()
             val endOfDay = localDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()
             val now = Instant.now()
+
             val filterEnd = if (endOfDay.isAfter(now)) now else endOfDay
             val timeRangeFilter = TimeRangeFilter.between(startOfDay, filterEnd)
-            var totalSteps = 0
-            var totalKcal = 0
+
+            return fetchStats(timeRangeFilter)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return Pair(0, 0)
+        }
+    }
+
+    private suspend fun fetchStats(timeRangeFilter: TimeRangeFilter): Pair<Int, Int> {
+        var totalSteps = 0
+        var totalKcal = 0
+
+        try {
             val stepsRequest = AggregateRequest(
                 metrics = setOf(StepsRecord.COUNT_TOTAL),
                 timeRangeFilter = timeRangeFilter
             )
             val stepsResponse = healthConnectClient.aggregate(stepsRequest)
             totalSteps = (stepsResponse[StepsRecord.COUNT_TOTAL] ?: 0L).toInt()
-
             val kcalRequest = AggregateRequest(
                 metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
                 timeRangeFilter = timeRangeFilter
@@ -96,10 +84,14 @@ class HealthConnectManager(private val context: Context) {
                 (kcalResponse[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
                     ?: 0.0).toInt()
 
-            return Pair(totalSteps, totalKcal)
+            if (totalKcal == 0 && totalSteps > 0) {
+                totalKcal = (totalSteps * 0.04).toInt()
+            }
+
         } catch (e: Exception) {
             e.printStackTrace()
-            return Pair(0, 0)
         }
+
+        return Pair(totalSteps, totalKcal)
     }
 }

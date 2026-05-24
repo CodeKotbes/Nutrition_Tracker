@@ -1,12 +1,17 @@
 package com.example.nutrition.nutritionUI.recipeScreen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,21 +20,30 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.model.RecipeIngredient
 import com.example.nutrition.nutritionUI.foodUI.AddFoodSheetContent
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
+import org.json.JSONArray
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeScreen(viewModel: FoodViewModel) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val recipeList by viewModel.allRecipes.collectAsState()
     val tempIngredients by viewModel.tempIngredients.collectAsState()
     val previewProduct by viewModel.scannedProductPreview.collectAsState()
@@ -43,11 +57,102 @@ fun RecipeScreen(viewModel: FoodViewModel) {
     val grayText = if (isDark) Color(0xFFAEAEB2) else Color(0xFF8E8E93)
     val accentBlue = if (isDark) Color(0xFF0A84FF) else Color(0xFF007AFF)
     var isCreatingRecipe by rememberSaveable { mutableStateOf(false) }
+    var isEditingExistingRecipe by rememberSaveable { mutableStateOf(false) }
     var recipeNameInput by rememberSaveable { mutableStateOf("") }
     var showIngredientSearchSheet by rememberSaveable { mutableStateOf(false) }
     var recipeToDelete by remember { mutableStateOf<Recipe?>(null) }
     var ingredientToDelete by remember { mutableStateOf<RecipeIngredient?>(null) }
     var ingredientToEdit by remember { mutableStateOf<RecipeIngredient?>(null) }
+    var showImportSuccess by remember { mutableStateOf(false) }
+    var recipeSearchQuery by rememberSaveable { mutableStateOf("") }
+
+    val importLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let {
+                try {
+                    val jsonStr = context.contentResolver.openInputStream(it)?.bufferedReader()
+                        ?.use { reader -> reader.readText() }
+                    if (jsonStr != null) {
+                        val root = JSONObject(jsonStr)
+                        val name = root.optString("recipeName", "Importierte Mahlzeit")
+                        val ingredients = root.optJSONArray("ingredients")
+
+                        viewModel.resetRecipeBuilder()
+                        if (ingredients != null) {
+                            for (i in 0 until ingredients.length()) {
+                                val obj = ingredients.getJSONObject(i)
+                                viewModel.addCustomIngredientToTempRecipe(
+                                    obj.optString("name", "Zutat"),
+                                    obj.optInt("calories", 0),
+                                    obj.optDouble("protein", 0.0),
+                                    obj.optDouble("carbs", 0.0),
+                                    obj.optDouble("fat", 0.0),
+                                    obj.optDouble("fiber", 0.0),
+                                    obj.optDouble("sugar", 0.0),
+                                    obj.optDouble("amountInGrams", 100.0)
+                                )
+                            }
+                        }
+                        viewModel.saveRecipe(name) {
+                            showImportSuccess = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+    var jsonToExport by remember { mutableStateOf("") }
+    val exportLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            uri?.let {
+                try {
+                    context.contentResolver.openOutputStream(it)?.use { out ->
+                        out.write(jsonToExport.toByteArray())
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+    val onExportFood: (FoodItem) -> Unit = { food ->
+        val root = JSONObject()
+        root.put("type", "FoodItem")
+        root.put("name", food.name)
+        root.put("calories", food.calories)
+        root.put("protein", food.protein)
+        root.put("carbs", food.carbs)
+        root.put("fat", food.fat)
+        root.put("fiber", food.fiber)
+        root.put("sugar", food.sugar)
+        jsonToExport = root.toString(4)
+        exportLauncher.launch("${food.name.replace(" ", "_")}.json")
+    }
+
+    if (showImportSuccess) {
+        AlertDialog(
+            onDismissRequest = { showImportSuccess = false },
+            containerColor = cardColor,
+            title = { Text("Import erfolgreich", color = textColor, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Die Mahlzeit wurde erfolgreich zu deinen gespeicherten Rezepten hinzugefügt.",
+                    color = grayText
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showImportSuccess = false }) {
+                    Text(
+                        "Super",
+                        color = accentBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        )
+    }
 
     if (recipeToDelete != null) {
         Dialog(onDismissRequest = { recipeToDelete = null }) {
@@ -160,6 +265,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
 
     if (ingredientToEdit != null) {
         Dialog(onDismissRequest = { ingredientToEdit = null }) {
+            val dialogFocusManager = LocalFocusManager.current
             val currentFactor = (ingredientToEdit?.amountInGrams ?: 100.0) / 100.0
             var editIngName by remember(ingredientToEdit) {
                 mutableStateOf(
@@ -213,7 +319,8 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(24.dp))
                     .background(cardColor)
-                    .padding(24.dp),
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -228,6 +335,10 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     value = editIngName,
                     onValueChange = { editIngName = it },
                     label = { Text("Name", color = grayText) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = {
+                        dialogFocusManager.moveFocus(FocusDirection.Next)
+                    }),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -240,7 +351,13 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     value = editIngKcal,
                     onValueChange = { editIngKcal = it },
                     label = { Text("Kalorien (pro 100g)", color = grayText) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(onNext = {
+                        dialogFocusManager.moveFocus(FocusDirection.Next)
+                    }),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -255,7 +372,13 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                         value = editIngProtein,
                         onValueChange = { editIngProtein = it },
                         label = { Text("Protein", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            dialogFocusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -268,7 +391,13 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                         value = editIngCarbs,
                         onValueChange = { editIngCarbs = it },
                         label = { Text("Carbs", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            dialogFocusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -281,7 +410,13 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                         value = editIngFat,
                         onValueChange = { editIngFat = it },
                         label = { Text("Fett", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            dialogFocusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -297,7 +432,13 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                         value = editIngFiber,
                         onValueChange = { editIngFiber = it },
                         label = { Text("Ballastst.", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            dialogFocusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -310,7 +451,13 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                         value = editIngSugar,
                         onValueChange = { editIngSugar = it },
                         label = { Text("Zucker", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            dialogFocusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -329,7 +476,11 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     value = editIngGrams,
                     onValueChange = { editIngGrams = it },
                     label = { Text("Menge in Gramm", color = grayText) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { dialogFocusManager.clearFocus() }),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -381,6 +532,11 @@ fun RecipeScreen(viewModel: FoodViewModel) {
     }
 
     if (!isCreatingRecipe) {
+        val filteredRecipes = remember(recipeSearchQuery, recipeList) {
+            if (recipeSearchQuery.isBlank()) recipeList
+            else recipeList.filter { it.name.contains(recipeSearchQuery, ignoreCase = true) }
+        }
+
         Scaffold(
             containerColor = bgColor,
             topBar = {
@@ -395,7 +551,23 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     },
                     actions = {
                         IconButton(onClick = {
-                            viewModel.resetRecipeBuilder(); isCreatingRecipe = true
+                            importLauncher.launch(
+                                arrayOf(
+                                    "application/json",
+                                    "*/*"
+                                )
+                            )
+                        }) {
+                            Icon(
+                                Icons.Default.Download,
+                                "Mahlzeit importieren",
+                                tint = accentBlue,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        IconButton(onClick = {
+                            viewModel.resetRecipeBuilder(); isCreatingRecipe =
+                            true; isEditingExistingRecipe = false
                         }) {
                             Icon(
                                 Icons.Default.AddCircle,
@@ -409,73 +581,106 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                 )
             }
         ) { paddingValues ->
-            if (recipeList.isEmpty()) {
-                Box(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+
+                OutlinedTextField(
+                    value = recipeSearchQuery,
+                    onValueChange = { recipeSearchQuery = it },
+                    placeholder = { Text("Mahlzeit suchen...", color = grayText) },
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) { Text("Noch keine Mahlzeiten erstellt.", color = grayText) }
-            } else {
-                LazyColumn(
-                    contentPadding = paddingValues,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(recipeList) { recipe ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.loadRecipeForEditing(recipe); recipeNameInput =
-                                    recipe.name; isCreatingRecipe = true
-                                },
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = cardColor)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        recipe.name,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp,
-                                        color = textColor
-                                    )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Suchen",
+                            tint = grayText
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor, unfocusedTextColor = textColor,
+                        focusedBorderColor = accentBlue, unfocusedBorderColor = Color.Transparent,
+                        focusedContainerColor = cardColor, unfocusedContainerColor = cardColor
+                    )
+                )
+
+                if (filteredRecipes.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (recipeSearchQuery.isBlank()) "Noch keine Mahlzeiten erstellt." else "Keine Mahlzeit gefunden.",
+                            color = grayText
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(filteredRecipes) { recipe ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.loadRecipeForEditing(recipe); recipeNameInput =
+                                        recipe.name; isCreatingRecipe =
+                                        true; isEditingExistingRecipe =
+                                        true
+                                    },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = cardColor)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
-                                            "${recipe.totalCalories} kcal",
+                                            recipe.name,
                                             fontWeight = FontWeight.Bold,
-                                            color = accentBlue,
-                                            fontSize = 16.sp
+                                            fontSize = 18.sp,
+                                            color = textColor
                                         )
-                                        IconButton(
-                                            onClick = { recipeToDelete = recipe },
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .padding(start = 8.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                "Löschen",
-                                                tint = grayText.copy(alpha = 0.6f)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                "${recipe.totalCalories} kcal",
+                                                fontWeight = FontWeight.Bold,
+                                                color = accentBlue,
+                                                fontSize = 16.sp
                                             )
+                                            IconButton(
+                                                onClick = { recipeToDelete = recipe },
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .padding(start = 8.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    "Löschen",
+                                                    tint = grayText.copy(alpha = 0.6f)
+                                                )
+                                            }
                                         }
                                     }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "P: ${recipe.totalProtein.toInt()}g | C: ${recipe.totalCarbs.toInt()}g | F: ${recipe.totalFat.toInt()}g",
+                                        color = grayText,
+                                        fontSize = 13.sp
+                                    )
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    "P: ${recipe.totalProtein.toInt()}g | C: ${recipe.totalCarbs.toInt()}g | F: ${recipe.totalFat.toInt()}g",
-                                    color = grayText,
-                                    fontSize = 13.sp
-                                )
                             }
                         }
+                        item { Spacer(modifier = Modifier.height(16.dp)) }
                     }
                 }
             }
@@ -495,9 +700,38 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     },
                     navigationIcon = {
                         IconButton(onClick = {
-                            isCreatingRecipe = false; recipeNameInput =
-                            ""; viewModel.resetRecipeBuilder()
+                            isCreatingRecipe = false; isEditingExistingRecipe =
+                            false; recipeNameInput = ""; viewModel.resetRecipeBuilder()
                         }) { Icon(Icons.Default.ArrowBack, "Zurück", tint = accentBlue) }
+                    },
+                    actions = {
+                        if (isEditingExistingRecipe) {
+                            IconButton(onClick = {
+                                if (tempIngredients.isNotEmpty()) {
+                                    val root = JSONObject()
+                                    val name = recipeNameInput.ifBlank { "Rezept" }
+                                    root.put("recipeName", name)
+                                    val arr = JSONArray()
+                                    tempIngredients.forEach { e ->
+                                        val obj = JSONObject()
+                                        obj.put("name", e.foodName)
+                                        obj.put("amountInGrams", e.amountInGrams)
+                                        obj.put("calories", e.calories)
+                                        obj.put("protein", e.protein)
+                                        obj.put("carbs", e.carbs)
+                                        obj.put("fat", e.fat)
+                                        obj.put("fiber", e.fiber)
+                                        obj.put("sugar", e.sugar)
+                                        arr.put(obj)
+                                    }
+                                    root.put("ingredients", arr)
+                                    jsonToExport = root.toString(4)
+                                    exportLauncher.launch("${name.replace(" ", "_")}.json")
+                                }
+                            }) {
+                                Icon(Icons.Default.Share, "Exportieren", tint = accentBlue)
+                            }
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
                 )
@@ -514,6 +748,8 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     onValueChange = { recipeNameInput = it },
                     placeholder = { Text("Name", color = grayText) },
                     shape = RoundedCornerShape(14.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(cardColor, RoundedCornerShape(14.dp)),
@@ -603,8 +839,8 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                 Button(
                     onClick = {
                         viewModel.saveRecipe(recipeNameInput) {
-                            isCreatingRecipe = false
-                            recipeNameInput = ""
+                            isCreatingRecipe = false; isEditingExistingRecipe =
+                            false; recipeNameInput = ""
                         }
                     },
                     modifier = Modifier
@@ -620,13 +856,12 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                 ) { Text("Mahlzeit speichern", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
 
                 if (showIngredientSearchSheet) {
-                    ModalBottomSheet(
-                        onDismissRequest = {
-                            showIngredientSearchSheet =
-                                false; viewModel.clearPreview(); viewModel.clearBarcodeError()
-                        },
-                        containerColor = bgColor
-                    ) {
+                    val searchSheetState =
+                        rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                    ModalBottomSheet(onDismissRequest = {
+                        showIngredientSearchSheet =
+                            false; viewModel.clearPreview(); viewModel.clearBarcodeError()
+                    }, sheetState = searchSheetState, containerColor = bgColor) {
                         AddFoodSheetContent(
                             viewModel = viewModel,
                             mealName = "Mahlzeit",
@@ -658,10 +893,10 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                                     fiber,
                                     sugar,
                                     grams
-                                )
-                                showIngredientSearchSheet = false
+                                ); showIngredientSearchSheet = false
                             },
-                            onRecipeAdd = { _ -> }
+                            onRecipeAdd = { _ -> },
+                            onExportFood = onExportFood
                         )
                     }
                 }

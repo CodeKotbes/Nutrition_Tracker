@@ -18,11 +18,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,8 +50,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -55,6 +64,7 @@ import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.nutritionUI.barcodeScanner.BarcodeScanner
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
+import org.json.JSONObject
 
 @Composable
 fun AddFoodSheetContent(
@@ -74,8 +84,11 @@ fun AddFoodSheetContent(
     onProductSelected: (FoodItem) -> Unit,
     onAdd: (FoodItem, Double) -> Unit,
     onCustomAdd: (String, Int, Double, Double, Double, Double, Double, Double) -> Unit,
-    onRecipeAdd: (Recipe) -> Unit
+    onRecipeAdd: (Recipe) -> Unit,
+    onExportFood: (FoodItem) -> Unit
 ) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     var searchInput by rememberSaveable { mutableStateOf("") }
     var gramsInput by rememberSaveable { mutableStateOf("100") }
     var isCustomMode by rememberSaveable { mutableStateOf(false) }
@@ -94,6 +107,30 @@ fun AddFoodSheetContent(
     var customFat by rememberSaveable { mutableStateOf("") }
     var customFiber by rememberSaveable { mutableStateOf("") }
     var customSugar by rememberSaveable { mutableStateOf("") }
+    val importLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let {
+                try {
+                    val jsonStr = context.contentResolver.openInputStream(it)?.bufferedReader()
+                        ?.use { reader -> reader.readText() }
+                    if (jsonStr != null) {
+                        val root = JSONObject(jsonStr)
+                        if (root.optString("type") == "FoodItem") {
+                            customName = root.optString("name", "")
+                            customKcal = root.optInt("calories", 0).toString()
+                            customProtein = root.optDouble("protein", 0.0).toString()
+                            customCarbs = root.optDouble("carbs", 0.0).toString()
+                            customFat = root.optDouble("fat", 0.0).toString()
+                            customFiber = root.optDouble("fiber", 0.0).toString()
+                            customSugar = root.optDouble("sugar", 0.0).toString()
+                            isCustomMode = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
 
     LaunchedEffect(previewProduct) {
         previewProduct?.let {
@@ -106,11 +143,20 @@ fun AddFoodSheetContent(
 
     val barcodeError by viewModel.barcodeError.collectAsState()
     val isBarcodeLoading by viewModel.isBarcodeLoading.collectAsState()
-
     val cameraPermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) isScannerOpen = true
         }
+
+    val filteredHistory = remember(searchInput, historyFoods) {
+        if (searchInput.isBlank()) historyFoods.reversed()
+        else historyFoods.reversed().filter { it.name.contains(searchInput, ignoreCase = true) }
+    }
+
+    val filteredRecipes = remember(searchInput, recipes) {
+        if (searchInput.isBlank()) recipes
+        else recipes.filter { it.name.contains(searchInput, ignoreCase = true) }
+    }
 
     if (isScannerOpen) {
         Box(
@@ -188,14 +234,24 @@ fun AddFoodSheetContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Zu $mealName", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = textColor)
-            TextButton(onClick = {
-                isCustomMode = !isCustomMode
-            }) {
-                Text(
-                    if (isCustomMode) "Zurück zur Suche" else "Eigenes Produkt",
-                    color = accentBlue
-                )
+            Text("$mealName", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = textColor)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = {
+                    importLauncher.launch(
+                        arrayOf(
+                            "application/json",
+                            "*/*"
+                        )
+                    )
+                }) {
+                    Icon(Icons.Default.Download, "Importieren", tint = accentBlue)
+                }
+                TextButton(onClick = { isCustomMode = !isCustomMode }) {
+                    Text(
+                        if (isCustomMode) "Zurück zur Suche" else "Eigenes Produkt",
+                        color = accentBlue
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -204,16 +260,14 @@ fun AddFoodSheetContent(
             OutlinedTextField(
                 value = searchInput,
                 onValueChange = { searchInput = it },
-                placeholder = { Text("Produkt/Zutat", color = grayText) },
+                placeholder = { Text("Produkt suchen...", color = grayText) },
                 shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = {
                     IconButton(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                        Icon(
-                            Icons.Default.CameraAlt,
-                            "Scannen",
-                            tint = accentBlue
-                        )
+                        Icon(Icons.Default.CameraAlt, "Scannen", tint = accentBlue)
                     }
                 },
                 trailingIcon = {
@@ -223,6 +277,7 @@ fun AddFoodSheetContent(
                             if (q.all { it.isDigit() }) viewModel.searchBarcode(q) {} else onTextSearch(
                                 q
                             )
+                            focusManager.clearFocus()
                         }
                         },
                         shape = RoundedCornerShape(8.dp),
@@ -243,9 +298,10 @@ fun AddFoodSheetContent(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (searchInput.isBlank() && searchResults.isEmpty() && previewProduct == null) {
+            if (previewProduct == null) {
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                    if (recipes.isNotEmpty()) {
+
+                    if (filteredRecipes.isNotEmpty()) {
                         item {
                             Text(
                                 "Meine Mahlzeiten",
@@ -254,7 +310,7 @@ fun AddFoodSheetContent(
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                         }
-                        items(recipes) { recipe ->
+                        items(filteredRecipes) { recipe ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -269,12 +325,13 @@ fun AddFoodSheetContent(
                                         recipe.name,
                                         fontWeight = FontWeight.SemiBold,
                                         color = textColor
-                                    ); Text(
-                                    "${recipe.totalCalories} kcal",
-                                    color = accentBlue,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                    )
+                                    Text(
+                                        "${recipe.totalCalories} kcal",
+                                        color = accentBlue,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                                 Button(
                                     onClick = { onRecipeAdd(recipe) },
@@ -284,70 +341,111 @@ fun AddFoodSheetContent(
                         }
                         item { Spacer(modifier = Modifier.height(16.dp)) }
                     }
-                    item {
-                        Text(
-                            "Zuletzt verwendet",
-                            fontWeight = FontWeight.Bold,
-                            color = grayText,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-                    items(historyFoods.reversed()) { food ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .background(cardColor, RoundedCornerShape(8.dp))
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    food.name,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = textColor
-                                ); Text(
-                                "${food.calories} kcal pro 100g",
+
+                    if (filteredHistory.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Zuletzt verwendet",
+                                fontWeight = FontWeight.Bold,
                                 color = grayText,
-                                fontSize = 12.sp
+                                modifier = Modifier.padding(bottom = 8.dp)
                             )
+                        }
+                        items(filteredHistory) { food ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .background(cardColor, RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        food.name,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = textColor
+                                    )
+                                    Text(
+                                        "${food.calories} kcal • P: ${food.protein.toInt()}g | C: ${food.carbs.toInt()}g | F: ${food.fat.toInt()}g",
+                                        color = grayText,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { onExportFood(food) }) {
+                                        Icon(
+                                            Icons.Default.Share,
+                                            "Teilen",
+                                            tint = accentBlue
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { onProductSelected(food) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
+                                    ) { Text("Wählen", color = Color.White) }
+                                }
                             }
-                            Button(
-                                onClick = { onProductSelected(food) },
-                                colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
-                            ) { Text("Wählen", color = Color.White) }
+                        }
+                        item { Spacer(modifier = Modifier.height(16.dp)) }
+                    }
+
+                    if (searchResults.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Suchergebnisse",
+                                fontWeight = FontWeight.Bold,
+                                color = grayText,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        items(searchResults) { food ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .background(cardColor, RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        food.name,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = textColor
+                                    )
+                                    Text(
+                                        "${food.calories} kcal • P: ${food.protein.toInt()}g | C: ${food.carbs.toInt()}g | F: ${food.fat.toInt()}g",
+                                        color = grayText,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { onExportFood(food) }) {
+                                        Icon(
+                                            Icons.Default.Share,
+                                            "Teilen",
+                                            tint = accentBlue
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { onProductSelected(food) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
+                                    ) { Text("Wählen", color = Color.White) }
+                                }
+                            }
                         }
                     }
-                }
-            }
-            if (searchResults.isNotEmpty() && previewProduct == null) {
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    items(searchResults) { food ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .background(cardColor, RoundedCornerShape(8.dp))
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    food.name,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = textColor
-                                ); Text(
-                                "${food.calories} kcal pro 100g",
+
+                    if (filteredRecipes.isEmpty() && filteredHistory.isEmpty() && searchResults.isEmpty()) {
+                        item {
+                            Text(
+                                if (searchInput.isBlank()) "Keine Einträge vorhanden." else "Keine lokalen Treffer. Tippe auf 'Suchen' für Online-Ergebnisse.",
                                 color = grayText,
-                                fontSize = 12.sp
+                                modifier = Modifier.padding(8.dp)
                             )
-                            }
-                            Button(
-                                onClick = { onProductSelected(food) },
-                                colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
-                            ) { Text("Wählen", color = Color.White) }
                         }
                     }
                 }
@@ -359,11 +457,12 @@ fun AddFoodSheetContent(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .background(cardColor)
-                        .padding(16.dp),
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        "Gescanntes Produkt korrigieren",
+                        "Produkt korrigieren",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = accentBlue
@@ -372,6 +471,10 @@ fun AddFoodSheetContent(
                         value = editName,
                         onValueChange = { editName = it },
                         label = { Text("Name", color = grayText) },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -384,7 +487,13 @@ fun AddFoodSheetContent(
                         value = editKcal,
                         onValueChange = { editKcal = it },
                         label = { Text("Kalorien (pro 100g)", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -398,7 +507,13 @@ fun AddFoodSheetContent(
                             value = editProtein,
                             onValueChange = { editProtein = it },
                             label = { Text("Protein", color = grayText) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusManager.moveFocus(FocusDirection.Next)
+                            }),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -411,7 +526,13 @@ fun AddFoodSheetContent(
                             value = editCarbs,
                             onValueChange = { editCarbs = it },
                             label = { Text("Carbs", color = grayText) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusManager.moveFocus(FocusDirection.Next)
+                            }),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -424,7 +545,13 @@ fun AddFoodSheetContent(
                             value = editFat,
                             onValueChange = { editFat = it },
                             label = { Text("Fett", color = grayText) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusManager.moveFocus(FocusDirection.Next)
+                            }),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -439,7 +566,13 @@ fun AddFoodSheetContent(
                             value = editFiber,
                             onValueChange = { editFiber = it },
                             label = { Text("Ballastst.", color = grayText) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusManager.moveFocus(FocusDirection.Next)
+                            }),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -452,7 +585,13 @@ fun AddFoodSheetContent(
                             value = editSugar,
                             onValueChange = { editSugar = it },
                             label = { Text("Zucker", color = grayText) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusManager.moveFocus(FocusDirection.Next)
+                            }),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -470,7 +609,11 @@ fun AddFoodSheetContent(
                         value = gramsInput,
                         onValueChange = { gramsInput = it },
                         label = { Text("Menge in Gramm", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -513,11 +656,18 @@ fun AddFoodSheetContent(
                 }
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = customName,
                     onValueChange = { customName = it },
                     label = { Text("Name", color = grayText) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = {
+                        focusManager.moveFocus(FocusDirection.Next)
+                    }),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -530,7 +680,13 @@ fun AddFoodSheetContent(
                     value = customKcal,
                     onValueChange = { customKcal = it },
                     label = { Text("Kalorien (pro 100g)", color = grayText) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(onNext = {
+                        focusManager.moveFocus(FocusDirection.Next)
+                    }),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -544,7 +700,13 @@ fun AddFoodSheetContent(
                         value = customProtein,
                         onValueChange = { customProtein = it },
                         label = { Text("Protein", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -557,7 +719,13 @@ fun AddFoodSheetContent(
                         value = customCarbs,
                         onValueChange = { customCarbs = it },
                         label = { Text("Carbs", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -570,7 +738,13 @@ fun AddFoodSheetContent(
                         value = customFat,
                         onValueChange = { customFat = it },
                         label = { Text("Fett", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -585,7 +759,13 @@ fun AddFoodSheetContent(
                         value = customFiber,
                         onValueChange = { customFiber = it },
                         label = { Text("Ballastst.", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -598,7 +778,13 @@ fun AddFoodSheetContent(
                         value = customSugar,
                         onValueChange = { customSugar = it },
                         label = { Text("Zucker", color = grayText) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            focusManager.moveFocus(FocusDirection.Next)
+                        }),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -611,8 +797,12 @@ fun AddFoodSheetContent(
                 OutlinedTextField(
                     value = gramsInput,
                     onValueChange = { gramsInput = it },
-                    label = { Text("Gegessene Menge (Gramm)", color = grayText) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text("Gegessene Menge (in g)", color = grayText) },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -648,6 +838,8 @@ fun AddFoodSheetContent(
                         color = Color.White
                     )
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

@@ -23,9 +23,6 @@ interface WaterDao {
     @Update
     suspend fun updateWaterRecord(record: WaterRecord)
 
-    @Delete
-    suspend fun deleteWaterRecord(record: WaterRecord)
-
     @Query("DELETE FROM water_records WHERE id = :id")
     suspend fun deleteWaterRecordById(id: Int)
 }

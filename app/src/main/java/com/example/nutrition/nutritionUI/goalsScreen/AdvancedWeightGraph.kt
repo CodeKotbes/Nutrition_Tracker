@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +59,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -96,13 +99,12 @@ fun AdvancedWeightGraph(
     val lastTimestamp =
         if (projectedPoints.isNotEmpty()) projectedPoints.last().timestamp else uniqueHistory.last().timestamp
     val totalDays = (((lastTimestamp - firstTimestamp) / msPerDay).toInt() + 1).coerceAtLeast(1)
-
     val dayWidthPx = 150f * zoomScale
     val density = LocalContext.current.resources.displayMetrics.density
     val totalWidthDp = ((totalDays * dayWidthPx) / density).dp
-
     var selectedPoint by remember { mutableStateOf<WeightEntry?>(null) }
     var tapOffset by remember { mutableStateOf<Offset?>(null) }
+    var selectedPointOffset by remember { mutableStateOf<Offset?>(null) }
 
     Row(modifier = modifier) {
         Canvas(
@@ -270,6 +272,7 @@ fun AdvancedWeightGraph(
 
                         if (distance < 40.dp.toPx()) {
                             selectedPoint = closestPoint
+                            selectedPointOffset = Offset(cx, cy)
                             drawCircle(
                                 color = (if (projectedPoints.contains(closestPoint)) Color(
                                     0xFFFF9F0A
@@ -279,27 +282,39 @@ fun AdvancedWeightGraph(
                             )
                         } else {
                             selectedPoint = null
+                            selectedPointOffset = null
                         }
                     }
                 }
             }
 
-            if (selectedPoint != null) {
+            if (selectedPoint != null && selectedPointOffset != null) {
                 val sdfTooltip = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-                val isProjected = projectedPoints.contains(selectedPoint!!)
+
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp)
+                        .offset {
+                            IntOffset(
+                                x = (selectedPointOffset!!.x - 120f).toInt(),
+                                y = (selectedPointOffset!!.y - 130f).toInt()
+                            )
+                        }
                         .clip(RoundedCornerShape(8.dp))
                         .background(textColor.copy(alpha = 0.9f))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = "${selectedPoint!!.weight} kg (${sdfTooltip.format(Date(selectedPoint!!.timestamp))})${if (isProjected) "" else ""}",
+                        text = "${selectedPoint!!.weight} kg\n(${
+                            sdfTooltip.format(
+                                Date(
+                                    selectedPoint!!.timestamp
+                                )
+                            )
+                        })",
                         color = cardColor,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -327,6 +342,26 @@ fun WeightLogDateDialog(
     val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
 
     if (showDatePicker) {
+        val datePickerColors = DatePickerDefaults.colors(
+            containerColor = cardColor,
+            titleContentColor = grayText,
+            headlineContentColor = textColor,
+            weekdayContentColor = grayText,
+            subheadContentColor = textColor,
+            yearContentColor = textColor,
+            currentYearContentColor = accentBlue,
+            selectedYearContentColor = Color.White,
+            selectedYearContainerColor = accentBlue,
+            dayContentColor = textColor,
+            disabledDayContentColor = grayText.copy(alpha = 0.5f),
+            selectedDayContentColor = Color.White,
+            disabledSelectedDayContentColor = grayText.copy(alpha = 0.5f),
+            selectedDayContainerColor = accentBlue,
+            disabledSelectedDayContainerColor = grayText.copy(alpha = 0.5f),
+            todayContentColor = accentBlue,
+            todayDateBorderColor = accentBlue
+        )
+
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
@@ -345,7 +380,7 @@ fun WeightLogDateDialog(
                 }
             },
             colors = DatePickerDefaults.colors(containerColor = cardColor)
-        ) { DatePicker(state = datePickerState) }
+        ) { DatePicker(state = datePickerState, colors = datePickerColors) }
     }
 
     AlertDialog(

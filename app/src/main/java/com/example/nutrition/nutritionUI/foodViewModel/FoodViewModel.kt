@@ -20,9 +20,12 @@ import java.util.Date
 import java.util.Locale
 
 enum class ProjectionMode(val label: String) {
-    CURRENT("Aktuell"),
+    CURRENT("Aktuell (Tagesbilanz)"),
+    GOAL("Ziel"),
     MINUS_500("-500 kcal"),
-    MINUS_1000("-1000 kcal")
+    MINUS_1000("-1000 kcal"),
+    PLUS_500("+500 kcal"),
+    PLUS_1000("+1000 kcal")
 }
 
 class FoodViewModel(
@@ -164,20 +167,38 @@ class FoodViewModel(
         }
     }
 
-    fun getProjectedWeightPath(mode: ProjectionMode): List<WeightEntry> {
+    fun getProjectedWeightPath(mode: ProjectionMode, days: Int = 30): List<WeightEntry> {
         val history = weightHistory.value.sortedBy { it.timestamp }
         val latestEntry = history.lastOrNull() ?: return emptyList()
 
         val dailyBalance = when (mode) {
             ProjectionMode.CURRENT -> {
-                val bmr = getBmr()
-                val totalActivity = _activityKcal.value + localWorkouts.value.sumOf { it.calories }
-                val consumption = bmr + totalActivity
-                (_goalKcal.value - consumption).toDouble()
+                val bmr = getBmr().toInt()
+                val totalBurned =
+                    bmr + _activityKcal.value + localWorkouts.value.sumOf { it.calories }
+                val eaten = diaryEntries.value.sumOf { it.calories }
+                var balance = eaten - totalBurned
+
+                if (eaten == 0) {
+                    val pastEntries = analysisEntries.value
+                    val cal = Calendar.getInstance()
+                    cal.add(Calendar.DAY_OF_YEAR, -1)
+                    val yesterdayStr =
+                        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
+                    val yesterdayEaten =
+                        pastEntries.filter { it.date == yesterdayStr }.sumOf { it.calories }
+                    if (yesterdayEaten > 0) {
+                        balance = yesterdayEaten - totalBurned
+                    }
+                }
+                balance.toDouble()
             }
 
+            ProjectionMode.GOAL -> getSavedGoalOffset()?.toDouble() ?: 0.0
             ProjectionMode.MINUS_500 -> -500.0
             ProjectionMode.MINUS_1000 -> -1000.0
+            ProjectionMode.PLUS_500 -> 500.0
+            ProjectionMode.PLUS_1000 -> 1000.0
         }
 
         val dailyChangeKg = dailyBalance / 7000.0
@@ -187,18 +208,18 @@ class FoodViewModel(
         var currentTimestamp = latestEntry.timestamp
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-        for (i in 1..60) {
+        for (i in 1..days) {
             currentWeight += dailyChangeKg
             currentTimestamp += 24L * 60 * 60 * 1000 // +1 Tag
 
-            val entry = WeightEntry(
-                weight = String.format(Locale.US, "%.1f", currentWeight).toDouble(),
-                date = sdf.format(Date(currentTimestamp)),
-                timestamp = currentTimestamp
+            projectionList.add(
+                WeightEntry(
+                    weight = String.format(Locale.US, "%.1f", currentWeight).toDouble(),
+                    date = sdf.format(Date(currentTimestamp)),
+                    timestamp = currentTimestamp
+                )
             )
-            projectionList.add(entry)
         }
-
         return projectionList
     }
 
@@ -262,7 +283,7 @@ class FoodViewModel(
         repository.saveCalculatorInputs(
             age = ageYears.toString(),
             height = heightCm.toString(),
-            targetWeight = "",
+            targetWeight = getSavedTargetWeight(),
             isMale = isMale,
             activityLevel = activityLevel,
             goalOffset = goalOffset
@@ -369,6 +390,8 @@ class FoodViewModel(
 
     fun addFoodToDiary(food: FoodItem, amountInGrams: Double, mealType: String) {
         viewModelScope.launch {
+            repository.insertFood(food)
+
             val factor = amountInGrams / 100.0
             val entry = DiaryEntry(
                 foodId = food.id,
@@ -428,6 +451,10 @@ class FoodViewModel(
     }
 
     fun addIngredientToTempRecipe(food: FoodItem, amountInGrams: Double) {
+        viewModelScope.launch {
+            repository.insertFood(food)
+        }
+
         val factor = amountInGrams / 100.0
         val ingredient = RecipeIngredient(
             recipeId = 0, foodId = food.id, foodName = food.name, amountInGrams = amountInGrams,

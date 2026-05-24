@@ -79,7 +79,7 @@ fun OverviewContent(
         )
         OverviewCard(
             "Wochen-Vergleich",
-            "Detaillierter Bilanz-Abgleich",
+            "Detaillierter Bilanz-Vergleich",
             Icons.Default.CompareArrows,
             Color(0xFF30D158),
             cardColor,

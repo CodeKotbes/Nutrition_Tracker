@@ -77,6 +77,19 @@ object FullBackupManager {
     }
 
     private fun performBackupToStream(context: Context, outputStream: OutputStream) {
+        try {
+            val dbFile = context.getDatabasePath("nutrition-db")
+            if (dbFile.exists()) {
+                val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                )
+                db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { it.moveToFirst() }
+                db.close()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         ZipOutputStream(outputStream).use { zos ->
             val dbFile = context.getDatabasePath("nutrition-db")
             listOf(dbFile, File(dbFile.path + "-shm"), File(dbFile.path + "-wal")).forEach { file ->
@@ -111,6 +124,8 @@ object FullBackupManager {
 
     fun restoreBackup(context: Context, uri: Uri) {
         try {
+            context.deleteDatabase("nutrition-db")
+
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 ZipInputStream(inputStream).use { zis ->
                     var entry = zis.nextEntry
@@ -152,11 +167,13 @@ object FullBackupManager {
                 Handler(Looper.getMainLooper()).postDelayed({
                     Process.killProcess(Process.myPid())
                     System.exit(0)
-                }, 1500)
+                }, 800)
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            Toast.makeText(context, "Fehler beim Importieren", Toast.LENGTH_LONG).show()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, "Fehler beim Importieren", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

@@ -5,31 +5,37 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
-
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 enum class AnalysisViewState { OVERVIEW, TREND_DETAIL, MACRO_DETAIL, COMPARE_DETAIL, WATER_DETAIL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnalysisScreen(viewModel: FoodViewModel) {
+fun AnalysisScreen(
+    viewModel: FoodViewModel,
+    onNavigateToFood: () -> Unit
+) {
     val allEntries by viewModel.analysisEntries.collectAsState()
     val goalKcal by viewModel.goalKcal.collectAsState()
     val allWaterRecords by viewModel.allWaterRecords.collectAsState()
@@ -44,10 +50,22 @@ fun AnalysisScreen(viewModel: FoodViewModel) {
     val waterBlue = Color(0xFF32ADE6)
     var currentView by rememberSaveable { mutableStateOf(AnalysisViewState.OVERVIEW) }
     var selectedTimeSpan by rememberSaveable { mutableStateOf(7) }
+    var customStartMillis by rememberSaveable { mutableStateOf<Long?>(null) }
+    var customEndMillis by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedFoodForDetails by remember { mutableStateOf<AggregatedFood?>(null) }
+    var selectedMetricScreen by remember { mutableStateOf<String?>(null) }
+    val handleJumpToDate: (String) -> Unit = { dateStr ->
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        sdf.parse(dateStr)?.time?.let { viewModel.setDate(it) }
+        onNavigateToFood()
+    }
 
-    BackHandler(enabled = currentView != AnalysisViewState.OVERVIEW) {
-        currentView = AnalysisViewState.OVERVIEW
+    BackHandler(enabled = currentView != AnalysisViewState.OVERVIEW || selectedMetricScreen != null) {
+        if (selectedMetricScreen != null) {
+            selectedMetricScreen = null
+        } else {
+            currentView = AnalysisViewState.OVERVIEW
+        }
     }
 
     Scaffold(
@@ -55,20 +73,33 @@ fun AnalysisScreen(viewModel: FoodViewModel) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
+                    val titleText = if (selectedMetricScreen != null) {
+                        "$selectedMetricScreen Analyse"
+                    } else {
                         when (currentView) {
                             AnalysisViewState.OVERVIEW -> "Analyse"
                             AnalysisViewState.TREND_DETAIL -> "Kalorien-Trend"
                             AnalysisViewState.MACRO_DETAIL -> "Nährstoff-Verteilung"
                             AnalysisViewState.COMPARE_DETAIL -> "Wochen-Vergleich"
                             AnalysisViewState.WATER_DETAIL -> "Wasser-Trend"
-                        },
-                        fontWeight = FontWeight.Bold, fontSize = 24.sp, color = textColor
+                        }
+                    }
+                    Text(
+                        text = titleText,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = textColor
                     )
                 },
                 navigationIcon = {
                     if (currentView != AnalysisViewState.OVERVIEW) {
-                        IconButton(onClick = { currentView = AnalysisViewState.OVERVIEW }) {
+                        IconButton(onClick = {
+                            if (selectedMetricScreen != null) {
+                                selectedMetricScreen = null
+                            } else {
+                                currentView = AnalysisViewState.OVERVIEW
+                            }
+                        }) {
                             Icon(Icons.Default.ArrowBack, "Zurück", tint = accentBlue)
                         }
                     }
@@ -93,44 +124,87 @@ fun AnalysisScreen(viewModel: FoodViewModel) {
                     )
 
                     AnalysisViewState.TREND_DETAIL -> TrendDetailContent(
-                        allEntries,
-                        goalKcal,
-                        selectedTimeSpan,
-                        cardColor,
-                        textColor,
-                        grayText,
-                        accentBlue,
-                        dividerColor,
-                        onTimeSpanChanged = { selectedTimeSpan = it },
-                        onFoodClick = { selectedFoodForDetails = it }
+                        allEntries = allEntries,
+                        goalKcal = goalKcal,
+                        timeSpan = selectedTimeSpan,
+                        customStartMillis = customStartMillis,
+                        customEndMillis = customEndMillis,
+                        cardColor = cardColor,
+                        textColor = textColor,
+                        grayText = grayText,
+                        accentBlue = accentBlue,
+                        dividerColor = dividerColor,
+                        onTimeSpanChanged = {
+                            selectedTimeSpan = it
+                            customStartMillis = null
+                            customEndMillis = null
+                        },
+                        onCustomRangeSelected = { start, end ->
+                            selectedTimeSpan = -1
+                            customStartMillis = start
+                            customEndMillis = end
+                        },
+                        onFoodClick = { selectedFoodForDetails = it },
+                        onJumpToDate = handleJumpToDate
                     )
 
                     AnalysisViewState.MACRO_DETAIL -> MacroDetailContent(
-                        allEntries,
-                        selectedTimeSpan,
-                        cardColor,
-                        textColor,
-                        grayText,
-                        accentBlue,
-                        dividerColor,
-                        onTimeSpanChanged = { selectedTimeSpan = it },
-                        onFoodClick = { selectedFoodForDetails = it }
+                        allEntries = allEntries,
+                        timeSpan = selectedTimeSpan,
+                        customStartMillis = customStartMillis,
+                        customEndMillis = customEndMillis,
+                        cardColor = cardColor,
+                        textColor = textColor,
+                        grayText = grayText,
+                        accentBlue = accentBlue,
+                        dividerColor = dividerColor,
+                        onTimeSpanChanged = {
+                            selectedTimeSpan = it
+                            customStartMillis = null
+                            customEndMillis = null
+                        },
+                        onCustomRangeSelected = { start, end ->
+                            selectedTimeSpan = -1
+                            customStartMillis = start
+                            customEndMillis = end
+                        },
+                        onFoodClick = { selectedFoodForDetails = it },
+                        onJumpToDate = handleJumpToDate
                     )
 
                     AnalysisViewState.COMPARE_DETAIL -> CompareDetailContent(
-                        allEntries, cardColor, textColor, grayText, accentBlue
+                        allEntries = allEntries,
+                        cardColor = cardColor,
+                        textColor = textColor,
+                        grayText = grayText,
+                        accentBlue = accentBlue,
+                        selectedMetricScreen = selectedMetricScreen,
+                        onMetricSelected = { selectedMetricScreen = it },
+                        onMetricBack = { selectedMetricScreen = null }
                     )
 
                     AnalysisViewState.WATER_DETAIL -> WaterDetailContent(
-                        allWaterRecords,
-                        waterGoal,
-                        selectedTimeSpan,
-                        cardColor,
-                        textColor,
-                        grayText,
-                        waterBlue,
-                        dividerColor,
-                        onTimeSpanChanged = { selectedTimeSpan = it }
+                        waterRecords = allWaterRecords,
+                        waterGoal = waterGoal,
+                        timeSpan = selectedTimeSpan,
+                        customStartMillis = customStartMillis,
+                        customEndMillis = customEndMillis,
+                        cardColor = cardColor,
+                        textColor = textColor,
+                        grayText = grayText,
+                        waterBlue = waterBlue,
+                        dividerColor = dividerColor,
+                        onTimeSpanChanged = {
+                            selectedTimeSpan = it
+                            customStartMillis = null
+                            customEndMillis = null
+                        },
+                        onCustomRangeSelected = { start, end ->
+                            selectedTimeSpan = -1
+                            customStartMillis = start
+                            customEndMillis = end
+                        },
+                        onJumpToDate = handleJumpToDate
                     )
                 }
             }
@@ -139,6 +213,7 @@ fun AnalysisScreen(viewModel: FoodViewModel) {
 
     if (selectedFoodForDetails != null) {
         Dialog(onDismissRequest = { selectedFoodForDetails = null }) {
+            val dialogFocusManager = LocalFocusManager.current
             val food = selectedFoodForDetails!!
             val factorTo100g = if (food.totalGrams > 0) 100.0 / food.totalGrams else 1.0
             val base100gKcal = (food.calories * factorTo100g).toInt()
@@ -148,7 +223,7 @@ fun AnalysisScreen(viewModel: FoodViewModel) {
             val base100gFib = food.fiber * factorTo100g
             val base100gSug = food.sugar * factorTo100g
             var calcGrams by remember { mutableStateOf(food.totalGrams.toInt().toString()) }
-            val currentGrams = calcGrams.toDoubleOrNull() ?: 100.0
+            val currentGrams = calcGrams.toDoubleOrNull() ?: 0.0
             val currentFactor = currentGrams / 100.0
 
             Column(
@@ -175,43 +250,24 @@ fun AnalysisScreen(viewModel: FoodViewModel) {
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
+
                 OutlinedTextField(
-                    value = calcGrams, onValueChange = { calcGrams = it },
-                    label = { Text("Ansicht für Menge (g)", color = grayText) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                    value = calcGrams,
+                    onValueChange = { calcGrams = it },
+                    label = { Text("Menge (g)", color = grayText) },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { dialogFocusManager.clearFocus() }),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = textColor,
                         unfocusedTextColor = textColor,
                         focusedBorderColor = accentBlue
                     )
                 )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { calcGrams = "100" },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = grayText.copy(alpha = 0.2f)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text("100g", color = textColor, fontSize = 12.sp) }
-                    Button(
-                        onClick = { calcGrams = food.totalGrams.toInt().toString() },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = grayText.copy(alpha = 0.2f)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text("Gesamt", color = textColor, fontSize = 12.sp) }
-                }
 
                 Spacer(modifier = Modifier.height(24.dp)); HorizontalDivider(color = dividerColor); Spacer(
                 modifier = Modifier.height(16.dp)

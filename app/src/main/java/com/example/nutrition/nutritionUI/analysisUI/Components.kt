@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,14 +16,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,182 +46,175 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.atan2
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WeekDropdownSelector(
-    currentOffset: Int,
+fun WeekCalendarSelector(
+    selectedDateMillis: Long,
     cardColor: Color,
     textColor: Color,
     accentBlue: Color,
     modifier: Modifier = Modifier,
-    onSelect: (Int) -> Unit
+    onSelect: (Long) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var showCalendar by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateMillis)
+
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .background(cardColor)
-                .clickable { expanded = true }
+                .clickable { showCalendar = true }
                 .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                getWeekDropdownLabel(currentOffset),
+                getWeekLabel(selectedDateMillis),
                 color = accentBlue,
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
                 maxLines = 1
             )
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "Wählen", tint = accentBlue)
+            Icon(Icons.Default.DateRange, contentDescription = "Woche wählen", tint = accentBlue)
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(cardColor)
-        ) {
-            (0..3).forEach { offset ->
-                DropdownMenuItem(text = {
-                    Text(
-                        getWeekDropdownLabel(offset),
-                        color = textColor,
-                        fontSize = 13.sp
-                    )
-                }, onClick = { onSelect(offset); expanded = false })
-            }
-        }
-    }
-}
 
-@Composable
-fun CompareRowCard(
-    title: String,
-    val1Str: String,
-    val2Str: String,
-    diff: Double,
-    unit: String,
-    label1: String,
-    label2: String,
-    cardColor: Color,
-    textColor: Color,
-    grayText: Color
-) {
-    val diffColor =
-        if (diff > 0) Color(0xFFFF453A) else if (diff < 0) Color(0xFF30D158) else grayText
-    val diffPrefix = if (diff > 0) "+" else ""
+        if (showCalendar) {
+            val datePickerColors = DatePickerDefaults.colors(
+                containerColor = cardColor,
+                titleContentColor = Color.Gray,
+                headlineContentColor = textColor,
+                weekdayContentColor = Color.Gray,
+                subheadContentColor = textColor,
+                yearContentColor = textColor,
+                currentYearContentColor = accentBlue,
+                selectedYearContentColor = Color.White,
+                selectedYearContainerColor = accentBlue,
+                dayContentColor = textColor,
+                disabledDayContentColor = Color.Gray.copy(alpha = 0.5f),
+                selectedDayContentColor = Color.White,
+                disabledSelectedDayContentColor = Color.Gray.copy(alpha = 0.5f),
+                selectedDayContainerColor = accentBlue,
+                disabledSelectedDayContainerColor = Color.Gray.copy(alpha = 0.5f),
+                todayContentColor = accentBlue,
+                todayDateBorderColor = accentBlue
+            )
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(cardColor)
-            .padding(20.dp)
-    ) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Text(label1, color = grayText, fontSize = 12.sp); Text(
-                val1Str,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = textColor
-            )
+            DatePickerDialog(
+                onDismissRequest = { showCalendar = false },
+                colors = DatePickerDefaults.colors(containerColor = cardColor),
+                confirmButton = {
+                    TextButton(onClick = {
+                        datePickerState.selectedDateMillis?.let { onSelect(it) }
+                        showCalendar = false
+                    }) { Text("OK", color = accentBlue, fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCalendar = false }) {
+                        Text("Abbrechen", color = textColor)
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState, colors = datePickerColors)
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    label2,
-                    color = grayText,
-                    fontSize = 12.sp
-                ); Text(val2Str, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-            }
-        }
-        Spacer(modifier = Modifier.height(12.dp)); HorizontalDivider(color = grayText.copy(alpha = 0.2f)); Spacer(
-        modifier = Modifier.height(12.dp)
-    )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Differenz", color = grayText, fontSize = 14.sp)
-            Text(
-                text = "$diffPrefix${diff.toInt()} $unit",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = diffColor
-            )
         }
     }
 }
 
 @Composable
 fun StaticBarChart(
-    data: List<Pair<String, Int>>,
+    data: List<Triple<String, String, Int>>,
     goal: Int,
     barColor: Color,
     labelColor: Color,
     timeSpan: Int,
-    isWater: Boolean = false
+    isWater: Boolean = false,
+    selectedDate: String? = null,
+    onBarClick: (String, Int) -> Unit
 ) {
-    val maxChartValue =
-        (data.maxOfOrNull { it.second } ?: 1000).coerceAtLeast(goal + if (isWater) 500 else 500)
-            .toFloat()
-    val showLabels = timeSpan <= 7
+    val maxChartValue = (data.maxOfOrNull { it.third } ?: 1000)
+        .coerceAtLeast(goal + if (isWater) 500 else 500)
+        .toFloat()
+    val showLabels = timeSpan in 1..7
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
+            .height(160.dp)
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val goalY =
-                size.height - (size.height * (goal / maxChartValue)).coerceIn(0f, size.height)
-            drawLine(
-                color = if (isWater) barColor.copy(alpha = 0.6f) else Color.Red.copy(alpha = 0.6f),
-                start = Offset(0f, goalY),
-                end = Offset(size.width, goalY),
-                strokeWidth = 2.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f))
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
         ) {
-            data.forEach { pair ->
-                val fillHeightPercentage = (pair.second / maxChartValue).coerceIn(0.02f, 1.0f)
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Bottom
-                ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val goalY =
+                    size.height - (size.height * (goal / maxChartValue)).coerceIn(0f, size.height)
+                drawLine(
+                    color = if (isWater) barColor.copy(alpha = 0.6f) else Color.Red.copy(alpha = 0.6f),
+                    start = Offset(0f, goalY),
+                    end = Offset(size.width, goalY),
+                    strokeWidth = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f))
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                data.forEach { triple ->
+                    val fullDate = triple.first
+                    val value = triple.third
+
+                    val fillHeightPercentage = (value / maxChartValue).coerceIn(0.02f, 1.0f)
+                    val alpha = if (selectedDate == null || selectedDate == fullDate) 1.0f else 0.4f
+                    val finalBarColor =
+                        if (!isWater && value > goal + 150) Color(0xFFFF453A).copy(alpha = alpha) else barColor.copy(
+                            alpha = alpha
+                        )
+
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(if (timeSpan == 30) 0.8f else 0.6f)
-                            .fillMaxHeight(fillHeightPercentage)
-                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                            .background(
-                                if (!isWater && pair.second > goal + 150) Color(0xFFFF453A) else barColor.copy(
-                                    alpha = 0.8f
-                                )
-                            )
-                    )
-                    if (showLabels) {
-                        Spacer(modifier = Modifier.height(8.dp)); Text(
-                            pair.first,
-                            fontSize = 10.sp,
-                            color = labelColor
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onBarClick(fullDate, value) }
+                            .padding(horizontal = 2.dp),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(if (timeSpan > 7) 0.8f else 0.6f)
+                                .fillMaxHeight(fillHeightPercentage)
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(finalBarColor)
                         )
                     }
+                }
+            }
+        }
+
+        if (showLabels) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                data.forEach { triple ->
+                    Text(
+                        text = triple.second,
+                        fontSize = 10.sp,
+                        color = labelColor,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -218,13 +223,9 @@ fun StaticBarChart(
 
 @Composable
 fun CustomPieChart(
-    p: Double,
-    c: Double,
-    f: Double,
-    fib: Double,
-    sug: Double,
-    selectedMacro: String,
-    textColor: Color
+    p: Double, c: Double, f: Double, fib: Double, sug: Double,
+    selectedMacro: String, textColor: Color,
+    onMacroSelected: (String) -> Unit
 ) {
     val total = p + c + f + fib + sug
     val pAngle = if (total > 0) (p / total * 360).toFloat() else 0f
@@ -238,70 +239,96 @@ fun CustomPieChart(
             .fillMaxWidth()
             .height(200.dp), contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(160.dp)) {
-            val strokeWidth = 30.dp.toPx()
+        Canvas(
+            modifier = Modifier
+                .size(160.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { tapOffset ->
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val dx = tapOffset.x - center.x
+                        val dy = tapOffset.y - center.y
+
+                        var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                        angle = (angle + 360) % 360
+                        val adjustedAngle = (angle + 90) % 360
+
+                        var currentAngle = 0f
+                        if (adjustedAngle in currentAngle..(currentAngle + pAngle)) onMacroSelected(
+                            "Protein"
+                        )
+                        currentAngle += pAngle
+                        if (adjustedAngle in currentAngle..(currentAngle + cAngle)) onMacroSelected(
+                            "Carbs"
+                        )
+                        currentAngle += cAngle
+                        if (adjustedAngle in currentAngle..(currentAngle + fAngle)) onMacroSelected(
+                            "Fett"
+                        )
+                        currentAngle += fAngle
+                        if (adjustedAngle in currentAngle..(currentAngle + fibAngle)) onMacroSelected(
+                            "Ballaststoffe"
+                        )
+                        currentAngle += fibAngle
+                        if (adjustedAngle in currentAngle..(currentAngle + sugAngle)) onMacroSelected(
+                            "Zucker"
+                        )
+                    }
+                }
+        ) {
+            val strokeWidth = 32.dp.toPx()
             var startAngle = -90f
-            drawArc(
-                color = Color(0xFF30D158).copy(alpha = if (selectedMacro == "Protein") 1f else 0.2f),
-                startAngle = startAngle,
-                sweepAngle = pAngle,
-                useCenter = false,
-                style = Stroke(strokeWidth)
-            ); startAngle += pAngle
-            drawArc(
-                color = Color(0xFFFF9F0A).copy(alpha = if (selectedMacro == "Carbs") 1f else 0.2f),
-                startAngle = startAngle,
-                sweepAngle = cAngle,
-                useCenter = false,
-                style = Stroke(strokeWidth)
-            ); startAngle += cAngle
-            drawArc(
-                color = Color(0xFF5E5CE6).copy(alpha = if (selectedMacro == "Fett") 1f else 0.2f),
-                startAngle = startAngle,
-                sweepAngle = fAngle,
-                useCenter = false,
-                style = Stroke(strokeWidth)
-            ); startAngle += fAngle
-            drawArc(
-                color = Color(0xFF64D2FF).copy(alpha = if (selectedMacro == "Ballaststoffe") 1f else 0.2f),
-                startAngle = startAngle,
-                sweepAngle = fibAngle,
-                useCenter = false,
-                style = Stroke(strokeWidth)
-            ); startAngle += fibAngle
-            drawArc(
-                color = Color(0xFFFF2D55).copy(alpha = if (selectedMacro == "Zucker") 1f else 0.2f),
-                startAngle = startAngle,
-                sweepAngle = sugAngle,
-                useCenter = false,
-                style = Stroke(strokeWidth)
-            )
+
+            fun drawMacroArc(color: Color, sweep: Float, isSelected: Boolean) {
+                if (sweep > 0) {
+                    drawArc(
+                        color = color.copy(alpha = if (isSelected) 1f else 0.3f),
+                        startAngle = startAngle,
+                        sweepAngle = sweep,
+                        useCenter = false,
+                        style = Stroke(
+                            width = if (isSelected) strokeWidth * 1.15f else strokeWidth,
+                            cap = StrokeCap.Butt
+                        )
+                    )
+                }
+                startAngle += sweep
+            }
+
+            drawMacroArc(Color(0xFF30D158), pAngle, selectedMacro == "Protein")
+            drawMacroArc(Color(0xFFFF9F0A), cAngle, selectedMacro == "Carbs")
+            drawMacroArc(Color(0xFF5E5CE6), fAngle, selectedMacro == "Fett")
+            drawMacroArc(Color(0xFF64D2FF), fibAngle, selectedMacro == "Ballaststoffe")
+            drawMacroArc(Color(0xFFFF2D55), sugAngle, selectedMacro == "Zucker")
         }
+
         val percent = if (total > 0) {
             when (selectedMacro) {
                 "Protein" -> (p / total * 100); "Carbs" -> (c / total * 100); "Fett" -> (f / total * 100); "Ballaststoffe" -> (fib / total * 100); else -> (sug / total * 100)
             }
         } else 0.0
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${percent.toInt()}%",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
                 color = textColor
             )
-            Text(selectedMacro, fontSize = 14.sp, color = Color.Gray)
+            Text(
+                selectedMacro,
+                fontSize = 13.sp,
+                color = Color.Gray,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
 
 @Composable
 fun CustomFocusMacroBar(
-    p: Double,
-    c: Double,
-    f: Double,
-    fib: Double,
-    sug: Double,
-    selectedMacro: String
+    p: Double, c: Double, f: Double, fib: Double, sug: Double,
+    selectedMacro: String,
+    onMacroSelected: (String) -> Unit
 ) {
     val total = p + c + f + fib + sug
     val pPerc = if (total > 0) (p / total).toFloat().coerceAtLeast(0.01f) else 0.01f
@@ -313,46 +340,46 @@ fun CustomFocusMacroBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(30.dp)
-            .clip(RoundedCornerShape(15.dp))
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
     ) {
         Box(
             Modifier
                 .fillMaxHeight()
                 .weight(pPerc)
-                .background(Color(0xFF30D158).copy(alpha = if (selectedMacro == "Protein") 1f else 0.2f))
-        )
+                .background(Color(0xFF30D158).copy(alpha = if (selectedMacro == "Protein") 1f else 0.3f))
+                .clickable { onMacroSelected("Protein") })
         Box(
             Modifier
                 .fillMaxHeight()
                 .weight(cPerc)
-                .background(Color(0xFFFF9F0A).copy(alpha = if (selectedMacro == "Carbs") 1f else 0.2f))
-        )
+                .background(Color(0xFFFF9F0A).copy(alpha = if (selectedMacro == "Carbs") 1f else 0.3f))
+                .clickable { onMacroSelected("Carbs") })
         Box(
             Modifier
                 .fillMaxHeight()
                 .weight(fPerc)
-                .background(Color(0xFF5E5CE6).copy(alpha = if (selectedMacro == "Fett") 1f else 0.2f))
-        )
+                .background(Color(0xFF5E5CE6).copy(alpha = if (selectedMacro == "Fett") 1f else 0.3f))
+                .clickable { onMacroSelected("Fett") })
         Box(
             Modifier
                 .fillMaxHeight()
                 .weight(fibPerc)
-                .background(Color(0xFF64D2FF).copy(alpha = if (selectedMacro == "Ballaststoffe") 1f else 0.2f))
-        )
+                .background(Color(0xFF64D2FF).copy(alpha = if (selectedMacro == "Ballaststoffe") 1f else 0.3f))
+                .clickable { onMacroSelected("Ballaststoffe") })
         Box(
             Modifier
                 .fillMaxHeight()
                 .weight(sugPerc)
-                .background(Color(0xFFFF2D55).copy(alpha = if (selectedMacro == "Zucker") 1f else 0.2f))
-        )
+                .background(Color(0xFFFF2D55).copy(alpha = if (selectedMacro == "Zucker") 1f else 0.3f))
+                .clickable { onMacroSelected("Zucker") })
     }
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(12.dp))
     val percent = when (selectedMacro) {
         "Protein" -> pPerc; "Carbs" -> cPerc; "Fett" -> fPerc; "Ballaststoffe" -> fibPerc; else -> sugPerc
     }
     Text(
-        "${(percent * 100).toInt()}% des Nährstoffgewichts",
+        "${(percent * 100).toInt()}% der Nährstoff-Verteilung",
         modifier = Modifier.fillMaxWidth(),
         textAlign = TextAlign.Center,
         fontWeight = FontWeight.Bold,
@@ -366,11 +393,7 @@ fun CustomFocusMacroBar(
 
 @Composable
 fun MacroSelectorButton(
-    label: String,
-    color: Color,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier
+    label: String, color: Color, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier
 ) {
     Box(
         modifier = modifier
@@ -395,21 +418,28 @@ fun MacroSelectorButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimeSpanSelector(
     selectedSpan: Int,
     accentBlue: Color,
     textColor: Color,
     cardColor: Color,
-    onSelected: (Int) -> Unit
+    onSelectedSpan: (Int) -> Unit,
+    onCustomRangeSelected: (Long, Long) -> Unit,
+    onInfoClick: () -> Unit = {}
 ) {
-    val spans = listOf(1 to "Tag", 7 to "7T", 14 to "14T", 30 to "1M")
+    val spans = listOf(1 to "Tag", 7 to "1W", 14 to "14T", 30 to "1M")
+    var showRangePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(cardColor)
-            .padding(4.dp)
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         spans.forEach { (days, label) ->
             val isSelected = selectedSpan == days
@@ -418,7 +448,7 @@ fun TimeSpanSelector(
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isSelected) accentBlue else Color.Transparent)
-                    .clickable { onSelected(days) }
+                    .clickable { onSelectedSpan(days) }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -430,19 +460,98 @@ fun TimeSpanSelector(
                 )
             }
         }
+
+        IconButton(
+            onClick = { showRangePicker = true },
+            modifier = Modifier
+                .padding(start = 4.dp)
+                .size(36.dp)
+        ) {
+            Icon(
+                Icons.Default.DateRange,
+                contentDescription = "Benutzerdefiniert",
+                tint = if (selectedSpan == -1) accentBlue else textColor
+            )
+        }
+
+        IconButton(
+            onClick = onInfoClick,
+            modifier = Modifier
+                .padding(end = 4.dp)
+                .size(36.dp)
+        ) {
+            Icon(Icons.Default.Info, contentDescription = "Zeitraum Info", tint = accentBlue)
+        }
+    }
+
+    if (showRangePicker) {
+        val rangePickerColors = DatePickerDefaults.colors(
+            containerColor = cardColor,
+            titleContentColor = Color.Gray,
+            headlineContentColor = textColor,
+            weekdayContentColor = Color.Gray,
+            subheadContentColor = textColor,
+            yearContentColor = textColor,
+            currentYearContentColor = accentBlue,
+            selectedYearContentColor = Color.White,
+            selectedYearContainerColor = accentBlue,
+            dayContentColor = textColor,
+            disabledDayContentColor = Color.Gray.copy(alpha = 0.5f),
+            selectedDayContentColor = Color.White,
+            disabledSelectedDayContentColor = Color.Gray.copy(alpha = 0.5f),
+            selectedDayContainerColor = accentBlue,
+            disabledSelectedDayContainerColor = Color.Gray.copy(alpha = 0.5f),
+            todayContentColor = accentBlue,
+            todayDateBorderColor = accentBlue,
+            dayInSelectionRangeContentColor = textColor,
+            dayInSelectionRangeContainerColor = accentBlue.copy(alpha = 0.2f)
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showRangePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val start = dateRangePickerState.selectedStartDateMillis
+                    val end = dateRangePickerState.selectedEndDateMillis ?: start
+                    if (start != null && end != null) {
+                        onCustomRangeSelected(start, end)
+                    }
+                    showRangePicker = false
+                }) { Text("Anwenden", color = accentBlue, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRangePicker = false }) {
+                    Text(
+                        "Abbrechen",
+                        color = textColor
+                    )
+                }
+            },
+            colors = DatePickerDefaults.colors(containerColor = cardColor)
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                title = {
+                    Text(
+                        "Zeitraum wählen",
+                        modifier = Modifier.padding(16.dp),
+                        color = textColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                headline = { Spacer(modifier = Modifier.height(0.dp)) },
+                showModeToggle = false,
+                modifier = Modifier.weight(1f),
+                colors = rangePickerColors
+            )
+        }
     }
 }
 
 @Composable
 fun FoodRow(
-    name: String,
-    valueLabel: String,
-    subLabel: String,
-    cardColor: Color,
-    textColor: Color,
-    grayText: Color,
-    valueColor: Color,
-    onClick: (() -> Unit)? = null
+    name: String, valueLabel: String, subLabel: String, cardColor: Color,
+    textColor: Color, grayText: Color, valueColor: Color, onClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -456,12 +565,204 @@ fun FoodRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                name,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor
-            ); Text(subLabel, color = grayText, fontSize = 12.sp)
+            Text(name, fontWeight = FontWeight.SemiBold, color = textColor)
+            Text(subLabel, color = grayText, fontSize = 12.sp)
         }
         Text(valueLabel, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = valueColor)
+    }
+}
+
+@Composable
+fun CompareFoodItemCard(
+    foodName: String, amountVal: String, metricVal: String,
+    cardColor: Color, textColor: Color, grayText: Color, metricColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(cardColor)
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp)
+        ) {
+            Text(
+                foodName,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor,
+                fontSize = 15.sp,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(amountVal, color = grayText, fontSize = 12.sp)
+        }
+        Text(metricVal, fontWeight = FontWeight.Black, color = metricColor, fontSize = 16.sp)
+    }
+}
+
+data class MetricData(
+    val name: String,
+    val val1: Int,
+    val val2: Int,
+    val unit: String,
+    val baseColor: Color
+)
+
+fun getMetricValue(food: AggregatedFood, metricName: String): Int {
+    return when (metricName) {
+        "Kalorien" -> food.calories
+        "Protein" -> food.protein.toInt()
+        "Carbs" -> food.carbs.toInt()
+        "Fett" -> food.fat.toInt()
+        "Ballaststoffe" -> food.fiber.toInt()
+        "Zucker" -> food.sugar.toInt()
+        else -> 0
+    }
+}
+
+@Composable
+fun CompareVisualChart(
+    k1: Int, k2: Int, p1: Int, p2: Int, c1: Int, c2: Int,
+    f1: Int, f2: Int, fib1: Int, fib2: Int, sug1: Int, sug2: Int,
+    label1: String, label2: String,
+    cardColor: Color, textColor: Color, grayText: Color, accentBlue: Color,
+    onMetricClick: (String) -> Unit
+) {
+    val week2Color = Color(0xFFFF9F0A)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                "Vergleich des Tagesdurchschnitts",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = textColor
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(accentBlue)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(label1, fontSize = 11.sp, color = grayText, maxLines = 1)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(week2Color)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(label2, fontSize = 11.sp, color = grayText, maxLines = 1)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            val metrics = listOf(
+                MetricData("Kalorien", k1, k2, "kcal", accentBlue),
+                MetricData("Protein", p1, p2, "g", Color(0xFF30D158)),
+                MetricData("Carbs", c1, c2, "g", Color(0xFFFF9F0A)),
+                MetricData("Fett", f1, f2, "g", Color(0xFF5E5CE6)),
+                MetricData("Ballaststoffe", fib1, fib2, "g", Color(0xFF64D2FF)),
+                MetricData("Zucker", sug1, sug2, "g", Color(0xFFFF2D55))
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                metrics.forEach { metric ->
+                    val maxVal = maxOf(metric.val1, metric.val2, 1).toFloat()
+                    val fill1 = (metric.val1 / maxVal).coerceIn(0.03f, 1f)
+                    val fill2 = (metric.val2 / maxVal).coerceIn(0.03f, 1f)
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onMetricClick(metric.name) }
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                metric.name,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = textColor
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${metric.val1}${metric.unit} vs ${metric.val2}${metric.unit}",
+                                    fontSize = 12.sp,
+                                    color = grayText,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "Details",
+                                    tint = grayText,
+                                    modifier = Modifier
+                                        .padding(start = 4.dp)
+                                        .size(16.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(grayText.copy(alpha = 0.1f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fill1)
+                                    .fillMaxHeight()
+                                    .background(accentBlue, RoundedCornerShape(4.dp))
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(grayText.copy(alpha = 0.1f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fill2)
+                                    .fillMaxHeight()
+                                    .background(week2Color, RoundedCornerShape(4.dp))
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

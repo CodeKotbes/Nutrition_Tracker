@@ -57,6 +57,7 @@ fun GoalsScreen(viewModel: FoodViewModel) {
     val previousWeight =
         if (sortedHistory.size >= 2) sortedHistory[sortedHistory.size - 2].weight else null
     val lifecycleOwner = LocalLifecycleOwner.current
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {

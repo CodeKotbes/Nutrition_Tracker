@@ -5,89 +5,134 @@ import com.example.nutrition.model.WaterRecord
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import kotlin.collections.component1
-import kotlin.collections.component2
 
+fun generateDateList(
+    timeSpan: Int,
+    customStartMillis: Long?,
+    customEndMillis: Long?
+): List<String> {
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val dateList = mutableListOf<String>()
+    val cal = Calendar.getInstance()
 
-fun getWeekDropdownLabel(offset: Int): String {
-    val sdf = SimpleDateFormat("dd.MM.", Locale.getDefault())
-    val endCal = Calendar.getInstance(); endCal.add(Calendar.DAY_OF_YEAR, -(offset * 7))
-    val startCal = Calendar.getInstance(); startCal.add(Calendar.DAY_OF_YEAR, -(offset * 7) - 6)
-    val dateRange = "${sdf.format(startCal.time)} - ${sdf.format(endCal.time)}"
-    return when (offset) {
-        0 -> "Diese ($dateRange)"; 1 -> "Letzte ($dateRange)"; else -> "Vor $offset W. ($dateRange)"
+    if (timeSpan == -1 && customStartMillis != null && customEndMillis != null) {
+        cal.timeInMillis = customStartMillis
+        val endCal = Calendar.getInstance().apply { timeInMillis = customEndMillis }
+        while (!cal.after(endCal)) {
+            dateList.add(sdf.format(cal.time))
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+        }
+    } else if (timeSpan == 7) {
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val offset = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
+        cal.add(Calendar.DAY_OF_YEAR, -offset)
+
+        for (i in 0..6) {
+            dateList.add(sdf.format(cal.time))
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+        }
+    } else {
+        for (i in 0 until timeSpan) {
+            dateList.add(sdf.format(cal.time))
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+        }
+        dateList.reverse()
     }
+    return dateList
 }
 
-fun getWeekShortLabel(offset: Int): String {
-    val sdf = SimpleDateFormat("dd.MM.", Locale.getDefault())
-    val endCal = Calendar.getInstance(); endCal.add(Calendar.DAY_OF_YEAR, -(offset * 7))
-    val startCal = Calendar.getInstance(); startCal.add(Calendar.DAY_OF_YEAR, -(offset * 7) - 6)
-    return "${sdf.format(startCal.time)} - ${sdf.format(endCal.time)}"
+fun getFilteredEntries(
+    entries: List<DiaryEntry>,
+    timeSpan: Int,
+    customStartMillis: Long?,
+    customEndMillis: Long?
+): List<DiaryEntry> {
+    val dateSet = generateDateList(timeSpan, customStartMillis, customEndMillis).toSet()
+    return entries.filter { it.date in dateSet }
 }
 
-fun getEntriesForPastWeek(entries: List<DiaryEntry>, weekOffset: Int): List<DiaryEntry> {
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    val resultDates = mutableListOf<String>()
-    val cal = Calendar.getInstance(); cal.add(Calendar.DAY_OF_YEAR, -(weekOffset * 7))
-    for (i in 0..6) {
-        resultDates.add(sdf.format(cal.time)); cal.add(Calendar.DAY_OF_YEAR, -1)
-    }
-    return entries.filter { it.date in resultDates }
+fun getFilteredWater(
+    records: List<WaterRecord>,
+    timeSpan: Int,
+    customStartMillis: Long?,
+    customEndMillis: Long?
+): List<WaterRecord> {
+    val dateSet = generateDateList(timeSpan, customStartMillis, customEndMillis).toSet()
+    return records.filter { it.date in dateSet }
 }
 
-fun filterEntriesByDays(entries: List<DiaryEntry>, days: Int): List<DiaryEntry> {
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    val cal = Calendar.getInstance(); cal.add(Calendar.DAY_OF_YEAR, -(days - 1))
-    val startDateStr = sdf.format(cal.time)
-    return entries.filter { it.date >= startDateStr }
-}
-
-fun filterWaterRecordsByDays(records: List<WaterRecord>, days: Int): List<WaterRecord> {
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    val cal = Calendar.getInstance(); cal.add(Calendar.DAY_OF_YEAR, -(days - 1))
-    val startDateStr = sdf.format(cal.time)
-    return records.filter { it.date >= startDateStr }
-}
-
-fun prepareDailyKcal(entries: List<DiaryEntry>, days: Int): List<Pair<String, Int>> {
+fun prepareDailyKcal(
+    entries: List<DiaryEntry>,
+    timeSpan: Int,
+    customStartMillis: Long?,
+    customEndMillis: Long?
+): List<Triple<String, String, Int>> {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val labelSdf = SimpleDateFormat("dd.MM", Locale.getDefault())
-    val cal = Calendar.getInstance()
-    val dateList = mutableListOf<String>()
-    for (i in 0 until days) {
-        dateList.add(sdf.format(cal.time)); cal.add(Calendar.DAY_OF_YEAR, -1)
-    }
-    dateList.reverse()
+    val dateList = generateDateList(timeSpan, customStartMillis, customEndMillis)
 
     return dateList.map { dateStr ->
         val kcal = entries.filter { it.date == dateStr }.sumOf { it.calories }
-        val label = if (days <= 7) SimpleDateFormat(
+        val label = if (dateList.size <= 7) SimpleDateFormat(
             "E",
-            Locale.getDefault()
-        ).format(sdf.parse(dateStr)!!) else labelSdf.format(sdf.parse(dateStr)!!)
-        label to kcal
+            Locale.GERMAN
+        ).format(sdf.parse(dateStr)!!)
+        else labelSdf.format(sdf.parse(dateStr)!!)
+        Triple(dateStr, label, kcal)
     }
 }
 
-fun prepareDailyWater(waterRecords: List<WaterRecord>, days: Int): List<Pair<String, Int>> {
+fun prepareDailyWater(
+    waterRecords: List<WaterRecord>,
+    timeSpan: Int,
+    customStartMillis: Long?,
+    customEndMillis: Long?
+): List<Triple<String, String, Int>> {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val labelSdf = SimpleDateFormat("dd.MM", Locale.getDefault())
-    val cal = Calendar.getInstance()
-    val dateList = mutableListOf<String>()
-    for (i in 0 until days) {
-        dateList.add(sdf.format(cal.time)); cal.add(Calendar.DAY_OF_YEAR, -1)
-    }
-    dateList.reverse()
+    val dateList = generateDateList(timeSpan, customStartMillis, customEndMillis)
 
     return dateList.map { dateStr ->
         val amount = waterRecords.filter { it.date == dateStr }.sumOf { it.amount }
-        val label = if (days <= 7) SimpleDateFormat(
+        val label = if (dateList.size <= 7) SimpleDateFormat(
             "E",
-            Locale.getDefault()
-        ).format(sdf.parse(dateStr)!!) else labelSdf.format(sdf.parse(dateStr)!!)
-        label to amount
+            Locale.GERMAN
+        ).format(sdf.parse(dateStr)!!)
+        else labelSdf.format(sdf.parse(dateStr)!!)
+        Triple(dateStr, label, amount)
     }
+}
+
+fun getWeekRange(dateMillis: Long): Pair<Calendar, Calendar> {
+    val cal = Calendar.getInstance().apply { timeInMillis = dateMillis }
+    val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+    val offset = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
+    cal.add(Calendar.DAY_OF_YEAR, -offset)
+
+    val start = cal.clone() as Calendar
+    val end = cal.clone() as Calendar
+    end.add(Calendar.DAY_OF_YEAR, 6)
+
+    return Pair(start, end)
+}
+
+fun getWeekLabel(dateMillis: Long): String {
+    val (start, end) = getWeekRange(dateMillis)
+    val sdf = SimpleDateFormat("dd.MM.yy", Locale.getDefault())
+    return "${sdf.format(start.time)} - ${sdf.format(end.time)}"
+}
+
+fun getEntriesForWeekOfDate(entries: List<DiaryEntry>, dateMillis: Long): List<DiaryEntry> {
+    val (start, _) = getWeekRange(dateMillis)
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val resultDates = mutableListOf<String>()
+
+    val current = start.clone() as Calendar
+    for (i in 0..6) {
+        resultDates.add(sdf.format(current.time))
+        current.add(Calendar.DAY_OF_YEAR, 1)
+    }
+    return entries.filter { it.date in resultDates }
 }
 
 data class AggregatedFood(

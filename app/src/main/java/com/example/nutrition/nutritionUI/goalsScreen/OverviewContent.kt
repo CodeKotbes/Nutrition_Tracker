@@ -21,15 +21,21 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,9 +68,12 @@ import com.example.nutrition.model.WorkoutEntry
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OverviewContent(
     currentGoal: Int,
@@ -101,6 +111,28 @@ fun OverviewContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
+            val currentDate by viewModel.currentDate.collectAsState()
+            val diaryEntries by viewModel.diaryEntries.collectAsState()
+            val eatenKcal = diaryEntries.sumOf { it.calories }
+            val bmr = viewModel.getBmr().toInt()
+            val totalBurned = bmr + burnedKcal
+            val dailyBalance = eatenKcal - totalBurned
+            val isGoalLoss = (selectedGoalOffset ?: 0) <= 0
+            val balanceColor = if (dailyBalance < 0) {
+                if (isGoalLoss) Color(0xFF30D158) else Color(0xFFFF453A)
+            } else if (dailyBalance > 0) {
+                if (isGoalLoss) Color(0xFFFF453A) else Color(0xFF30D158)
+            } else grayText
+            val balanceText = if (dailyBalance < 0) "Defizit: $dailyBalance kcal"
+            else if (dailyBalance > 0) "Überschuss: +$dailyBalance kcal"
+            else "Ausgeglichen (0 kcal)"
+            var showCalendar by remember { mutableStateOf(false) }
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val displayFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+            val dateMillis =
+                remember(currentDate) { sdf.parse(currentDate)?.time ?: System.currentTimeMillis() }
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMillis)
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -108,20 +140,114 @@ fun OverviewContent(
                     .background(cardColor)
                     .padding(20.dp)
             ) {
-                Text(
-                    "Dein Status",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = textColor
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "Dein Status",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = textColor
+                        )
+                        Text(
+                            balanceText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = balanceColor
+                        )
+                        Text(
+                            "Grundbedarf: $bmr kcal",
+                            fontSize = 12.sp,
+                            color = grayText,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.changeDate(-1) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.ChevronLeft, "Vorheriger Tag", tint = accentBlue)
+                        }
+
+                        Text(
+                            text = displayFormat.format(Date(dateMillis)),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showCalendar = true }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+
+                        IconButton(
+                            onClick = { viewModel.changeDate(1) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.ChevronRight, "Nächster Tag", tint = accentBlue)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     StatusMiniCard("Ziel", "$currentGoal", "kcal", accentBlue)
+                    StatusMiniCard("Gegessen", "$eatenKcal", "kcal", Color(0xFFFF9F0A))
                     StatusMiniCard("Aktiv", "+$burnedKcal", "kcal", Color(0xFF30D158))
-                    StatusMiniCard("Schritte", "$steps", "heute", Color(0xFFFF9F0A))
+                    StatusMiniCard("Schritte", "$steps", "heute", Color(0xFF64D2FF))
+                }
+            }
+
+            if (showCalendar) {
+                val datePickerColors = DatePickerDefaults.colors(
+                    containerColor = cardColor,
+                    titleContentColor = grayText,
+                    headlineContentColor = textColor,
+                    weekdayContentColor = grayText,
+                    subheadContentColor = textColor,
+                    yearContentColor = textColor,
+                    currentYearContentColor = accentBlue,
+                    selectedYearContentColor = Color.White,
+                    selectedYearContainerColor = accentBlue,
+                    dayContentColor = textColor,
+                    disabledDayContentColor = grayText.copy(alpha = 0.5f),
+                    selectedDayContentColor = Color.White,
+                    disabledSelectedDayContentColor = grayText.copy(alpha = 0.5f),
+                    selectedDayContainerColor = accentBlue,
+                    disabledSelectedDayContainerColor = grayText.copy(alpha = 0.5f),
+                    todayContentColor = accentBlue,
+                    todayDateBorderColor = accentBlue
+                )
+
+                DatePickerDialog(
+                    onDismissRequest = { showCalendar = false },
+                    colors = DatePickerDefaults.colors(containerColor = cardColor),
+                    confirmButton = {
+                        TextButton(onClick = {
+                            datePickerState.selectedDateMillis?.let { viewModel.setDate(it) }
+                            showCalendar = false
+                        }) { Text("OK", color = accentBlue, fontWeight = FontWeight.Bold) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCalendar = false }) {
+                            Text(
+                                "Abbrechen",
+                                color = grayText
+                            )
+                        }
+                    }
+                ) {
+                    DatePicker(state = datePickerState, colors = datePickerColors)
                 }
             }
         }
@@ -240,6 +366,7 @@ fun OverviewContent(
         item {
             var isCalculatorExpanded by remember { mutableStateOf(false) }
             val focusManager = LocalFocusManager.current
+            var showActivityInfo by remember { mutableStateOf(false) }
 
             Column(
                 modifier = Modifier
@@ -345,12 +472,63 @@ fun OverviewContent(
                         }
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        Text(
-                            "Alltag / Aktivität",
-                            fontWeight = FontWeight.SemiBold,
-                            color = textColor,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                        ) {
+                            Text(
+                                "Alltag / Aktivität",
+                                fontWeight = FontWeight.SemiBold,
+                                color = textColor
+                            )
+                            IconButton(
+                                onClick = { showActivityInfo = true },
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .padding(start = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "Info Aktivitätslevel",
+                                    tint = accentBlue,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        if (showActivityInfo) {
+                            AlertDialog(
+                                onDismissRequest = { showActivityInfo = false },
+                                containerColor = cardColor,
+                                title = {
+                                    Text(
+                                        "Aktivitätslevel",
+                                        color = textColor,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                text = {
+                                    Text(
+                                        "• Wenig Bewegung: Fast ausschließlich sitzend (z.B. Bürojob).\n\n" +
+                                                "• Leicht aktiv: Überwiegend sitzend, etwas Bewegung oder 1-2x Woche leichter Sport.\n\n" +
+                                                "• Mittel: Überwiegend stehende/gehende Tätigkeit oder 3-5x Woche Sport.\n\n" +
+                                                "• Sehr aktiv: Körperlich anstrengende Arbeit oder täglich intensiver Sport.",
+                                        color = grayText,
+                                        fontSize = 14.sp
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showActivityInfo = false }) {
+                                        Text(
+                                            "Verstanden",
+                                            color = accentBlue,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            )
+                        }
+
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SelectionButton(
                                 "Wenig Bewegung",
@@ -369,7 +547,7 @@ fun OverviewContent(
                                 textColor
                             )
                             SelectionButton(
-                                "Mittel (3-5x Sport/Woche)",
+                                "Mittel",
                                 selectedActivityLevel == 1.55,
                                 { onActivityChange(1.55) },
                                 Modifier.fillMaxWidth(),
@@ -427,8 +605,7 @@ fun OverviewContent(
                         Button(
                             onClick = {
                                 onCalculate()
-                                isCalculatorExpanded =
-                                    false
+                                isCalculatorExpanded = false
                                 focusManager.clearFocus()
                             },
                             enabled = isMale != null && selectedActivityLevel != null && selectedGoalOffset != null && ageInput.isNotBlank() && heightInput.isNotBlank(),
@@ -455,7 +632,6 @@ fun OverviewContent(
             var showWorkoutDialog by remember { mutableStateOf(false) }
             var workoutToEdit by remember { mutableStateOf<WorkoutEntry?>(null) }
             var workoutToDelete by remember { mutableStateOf<WorkoutEntry?>(null) }
-
             var isWorkoutsExpanded by remember { mutableStateOf(false) }
 
             Column(

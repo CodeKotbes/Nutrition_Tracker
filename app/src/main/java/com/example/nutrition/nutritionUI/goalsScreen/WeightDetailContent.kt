@@ -8,7 +8,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,7 +41,9 @@ fun WeightDetailContent(
     var showTargetDialog by remember { mutableStateOf(false) }
     var showFullscreenGraph by remember { mutableStateOf(false) }
     var showTrendline by remember { mutableStateOf(false) }
-    var projectionMode by remember { mutableStateOf(ProjectionMode.MINUS_500) }
+    var projectionMode by remember { mutableStateOf(ProjectionMode.CURRENT) }
+    var projectionDays by remember { mutableStateOf(30) }
+    var showScenarioInfo by remember { mutableStateOf(false) }
     val latestEntry = sortedHistory.lastOrNull()
     val latestWeight = latestEntry?.weight
     val previousWeight =
@@ -107,7 +111,10 @@ fun WeightDetailContent(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     val projectedHistory =
-                        if (showTrendline) viewModel.getProjectedWeightPath(projectionMode) else emptyList()
+                        if (showTrendline) viewModel.getProjectedWeightPath(
+                            projectionMode,
+                            projectionDays
+                        ) else emptyList()
 
                     AdvancedWeightGraph(
                         historyPoints = sortedHistory,
@@ -136,21 +143,99 @@ fun WeightDetailContent(
                     }
 
                     if (showTrendline) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        var modeDropdownExpanded by remember { mutableStateOf(false) }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ProjectionMode.values().forEach { mode ->
-                                FilterChip(
-                                    selected = projectionMode == mode,
-                                    onClick = { projectionMode = mode },
-                                    label = { Text(mode.label, fontSize = 11.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFFFF9F0A),
-                                        selectedLabelColor = Color.White
-                                    )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Szenario:",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = textColor
                                 )
+                                IconButton(
+                                    onClick = { showScenarioInfo = true },
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .padding(start = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Info zu Szenarien",
+                                        tint = accentBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+
+                            Box {
+                                OutlinedButton(
+                                    onClick = { modeDropdownExpanded = true },
+                                    modifier = Modifier.height(36.dp),
+                                    contentPadding = PaddingValues(
+                                        horizontal = 12.dp,
+                                        vertical = 0.dp
+                                    )
+                                ) {
+                                    Text(projectionMode.label, color = textColor, fontSize = 12.sp)
+                                    Icon(
+                                        Icons.Default.ExpandMore,
+                                        contentDescription = "Auswählen",
+                                        tint = textColor,
+                                        modifier = Modifier
+                                            .padding(start = 4.dp)
+                                            .size(16.dp)
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = modeDropdownExpanded,
+                                    onDismissRequest = { modeDropdownExpanded = false },
+                                    containerColor = cardColor
+                                ) {
+                                    ProjectionMode.values().forEach { mode ->
+                                        DropdownMenuItem(
+                                            text = { Text(mode.label, color = textColor) },
+                                            onClick = {
+                                                projectionMode = mode
+                                                modeDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Zeitraum:",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = textColor
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(7 to "1W", 30 to "1M", 90 to "3M").forEach { (days, label) ->
+                                    FilterChip(
+                                        selected = projectionDays == days,
+                                        onClick = { projectionDays = days },
+                                        label = { Text(label, fontSize = 12.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = accentBlue,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -214,6 +299,34 @@ fun WeightDetailContent(
             }
         }
         item { Spacer(modifier = Modifier.height(32.dp)) }
+    }
+
+    if (showScenarioInfo) {
+        AlertDialog(
+            onDismissRequest = { showScenarioInfo = false },
+            containerColor = cardColor,
+            title = {
+                Text(
+                    "Szenarien erklärt",
+                    color = textColor,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "• Aktuell: Berechnet den Trend basierend auf deiner heutigen Bilanz.\n\n" +
+                            "• Dein Ziel: Zeigt den Verlauf, wenn du dich an den im Kalorienrechner eingestellten Wert hältst.\n\n" +
+                            "• +/- Werte: Zeigen feste theoretische Pfade, unabhängig von deinem echten Verhalten.",
+                    color = grayText,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showScenarioInfo = false }) {
+                    Text("Verstanden", color = accentBlue, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     if (entryToEdit != null) {
@@ -295,7 +408,10 @@ fun WeightDetailContent(
 
     if (showFullscreenGraph) {
         val projectedHistory =
-            if (showTrendline) viewModel.getProjectedWeightPath(projectionMode) else emptyList()
+            if (showTrendline) viewModel.getProjectedWeightPath(
+                projectionMode,
+                projectionDays
+            ) else emptyList()
         FullscreenWeightGraphDialog(
             historyPoints = sortedHistory,
             projectedPoints = projectedHistory,

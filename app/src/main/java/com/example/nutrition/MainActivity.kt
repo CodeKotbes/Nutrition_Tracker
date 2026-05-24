@@ -94,7 +94,13 @@ class MainActivity : ComponentActivity() {
                     when (page) {
                         0 -> FoodScreen(viewModel = viewModel)
                         1 -> RecipeScreen(viewModel = viewModel)
-                        2 -> AnalysisScreen(viewModel = viewModel)
+                        2 -> AnalysisScreen(
+                            viewModel = viewModel,
+                            onNavigateToFood = {
+                                coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                            }
+                        )
+
                         3 -> GoalsScreen(viewModel = viewModel)
                         4 -> OptionsScreen(viewModel = viewModel)
                     }

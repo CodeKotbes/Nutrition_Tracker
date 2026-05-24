@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
@@ -31,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,27 +45,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nutrition.model.DiaryEntry
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 
 @Composable
 fun DashboardSummary(
-    kcal: Int,
-    goalKcal: Int,
-    p: Double,
-    goalP: Int,
-    c: Double,
-    goalC: Int,
-    f: Double,
-    goalF: Int,
-    fib: Double,
-    goalFib: Int,
-    sug: Double,
-    goalSug: Int,
-    cardColor: Color,
-    textColor: Color,
-    grayText: Color,
-    accentBlue: Color,
-    dividerColor: Color,
+    kcal: Int, goalKcal: Int, p: Double, goalP: Int, c: Double, goalC: Int,
+    f: Double, goalF: Int, fib: Double, goalFib: Int, sug: Double, goalSug: Int,
+    cardColor: Color, textColor: Color, grayText: Color, accentBlue: Color, dividerColor: Color,
     onEditGoalsClick: () -> Unit
 ) {
     Column(
@@ -75,20 +67,9 @@ fun DashboardSummary(
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "Tagesübersicht",
-            color = grayText,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        Text("Tagesübersicht", color = grayText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         Spacer(modifier = Modifier.height(24.dp))
-        SemiCircleCalorieChart(
-            kcal = kcal,
-            goalKcal = goalKcal,
-            accentBlue = accentBlue,
-            grayText = grayText,
-            textColor = textColor
-        )
+        SemiCircleCalorieChart(kcal, goalKcal, accentBlue, grayText, textColor)
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -302,15 +283,12 @@ fun MealSection(
                     fontWeight = FontWeight.Medium
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                IconButton(
-                    onClick = onAddClick,
-                    modifier = Modifier.size(28.dp)
-                ) {
+                IconButton(onClick = onAddClick, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.AddCircle,
                         "Hinzufügen",
                         tint = accentBlue,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -375,6 +353,87 @@ fun MealSection(
                     color = grayText,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(start = 48.dp, bottom = 16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun HorizontalWeekCalendar(
+    currentDateStr: String,
+    allEntries: List<DiaryEntry>,
+    accentBlue: Color,
+    textColor: Color,
+    grayText: Color,
+    cardColor: Color,
+    onDateSelected: (Long) -> Unit
+) {
+    val sdf = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val dayFormat = remember { SimpleDateFormat("EEE", Locale.GERMAN) }
+    val numFormat = remember { SimpleDateFormat("dd", Locale.getDefault()) }
+    val weekDays = remember(currentDateStr, allEntries) {
+        val date = try {
+            sdf.parse(currentDateStr)
+        } catch (e: Exception) {
+            Date()
+        }
+        val cal = Calendar.getInstance().apply { time = date ?: Date() }
+
+        var dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        if (dayOfWeek == Calendar.SUNDAY) dayOfWeek = 8
+        cal.add(Calendar.DAY_OF_YEAR, -(dayOfWeek - Calendar.MONDAY))
+
+        (0..6).map {
+            val dStr = sdf.format(cal.time)
+            val millis = cal.timeInMillis
+            val dNum = numFormat.format(cal.time)
+            val dName = dayFormat.format(cal.time)
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+            Triple(dStr, dName to dNum, millis)
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(cardColor)
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        weekDays.forEach { (dateStr, labels, millis) ->
+            val (dayName, dayNum) = labels
+            val isSelected = dateStr == currentDateStr
+            val hasData = allEntries.any { it.date == dateStr }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSelected) accentBlue else Color.Transparent)
+                    .clickable { onDateSelected(millis) }
+                    .padding(vertical = 8.dp, horizontal = 10.dp)
+            ) {
+                Text(
+                    dayName,
+                    color = if (isSelected) Color.White.copy(alpha = 0.8f) else grayText,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    dayNum,
+                    color = if (isSelected) Color.White else textColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(if (hasData) (if (isSelected) Color.White else accentBlue) else Color.Transparent)
                 )
             }
         }

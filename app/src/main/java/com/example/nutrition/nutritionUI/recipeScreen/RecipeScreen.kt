@@ -38,12 +38,14 @@ import com.example.nutrition.nutritionUI.foodUI.AddFoodSheetContent
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.DecimalFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeScreen(viewModel: FoodViewModel) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val df = remember { DecimalFormat("#.#") }
     val recipeList by viewModel.allRecipes.collectAsState()
     val tempIngredients by viewModel.tempIngredients.collectAsState()
     val previewProduct by viewModel.scannedProductPreview.collectAsState()
@@ -82,7 +84,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             for (i in 0 until ingredients.length()) {
                                 val obj = ingredients.getJSONObject(i)
                                 viewModel.addCustomIngredientToTempRecipe(
-                                    obj.optString("name", "Zutat"),
+                                    obj.optString("name", "Produkt"),
                                     obj.optInt("calories", 0),
                                     obj.optDouble("protein", 0.0),
                                     obj.optDouble("carbs", 0.0),
@@ -138,7 +140,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
             title = { Text("Import erfolgreich", color = textColor, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "Die Mahlzeit wurde erfolgreich zu deinen gespeicherten Rezepten hinzugefügt.",
+                    "Die Mahlzeit wurde erfolgreich zu deinen gespeicherten Mahlzeiten hinzugefügt.",
                     color = grayText
                 )
             },
@@ -218,7 +220,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "Zutat entfernen",
+                    "Produkt entfernen",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = textColor
@@ -268,9 +270,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
             val dialogFocusManager = LocalFocusManager.current
             val currentFactor = (ingredientToEdit?.amountInGrams ?: 100.0) / 100.0
             var editIngName by remember(ingredientToEdit) {
-                mutableStateOf(
-                    ingredientToEdit?.foodName ?: ""
-                )
+                mutableStateOf(ingredientToEdit?.foodName ?: "")
             }
             var editIngKcal by remember(ingredientToEdit) {
                 mutableStateOf(
@@ -280,37 +280,39 @@ fun RecipeScreen(viewModel: FoodViewModel) {
             }
             var editIngProtein by remember(ingredientToEdit) {
                 mutableStateOf(
-                    if (currentFactor > 0) (ingredientToEdit!!.protein / currentFactor).toInt()
-                        .toString() else "0"
+                    if (currentFactor > 0) df.format(ingredientToEdit!!.protein / currentFactor)
+                        .replace(",", ".") else "0"
                 )
             }
             var editIngCarbs by remember(ingredientToEdit) {
                 mutableStateOf(
-                    if (currentFactor > 0) (ingredientToEdit!!.carbs / currentFactor).toInt()
-                        .toString() else "0"
+                    if (currentFactor > 0) df.format(ingredientToEdit!!.carbs / currentFactor)
+                        .replace(",", ".") else "0"
                 )
             }
             var editIngFat by remember(ingredientToEdit) {
                 mutableStateOf(
-                    if (currentFactor > 0) (ingredientToEdit!!.fat / currentFactor).toInt()
-                        .toString() else "0"
+                    if (currentFactor > 0) df.format(ingredientToEdit!!.fat / currentFactor)
+                        .replace(",", ".") else "0"
                 )
             }
             var editIngFiber by remember(ingredientToEdit) {
                 mutableStateOf(
-                    if (currentFactor > 0) (ingredientToEdit!!.fiber / currentFactor).toInt()
-                        .toString() else "0"
+                    if (currentFactor > 0) df.format(ingredientToEdit!!.fiber / currentFactor)
+                        .replace(",", ".") else "0"
                 )
             }
             var editIngSugar by remember(ingredientToEdit) {
                 mutableStateOf(
-                    if (currentFactor > 0) (ingredientToEdit!!.sugar / currentFactor).toInt()
-                        .toString() else "0"
+                    if (currentFactor > 0) df.format(ingredientToEdit!!.sugar / currentFactor)
+                        .replace(",", ".") else "0"
                 )
             }
             var editIngGrams by remember(ingredientToEdit) {
                 mutableStateOf(
-                    ingredientToEdit?.amountInGrams?.toInt()?.toString() ?: "100"
+                    ingredientToEdit?.amountInGrams?.let {
+                        if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+                    } ?: "100"
                 )
             }
 
@@ -325,7 +327,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "Zutat korrigieren",
+                    "Produkt korrigieren",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = textColor
@@ -673,7 +675,11 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        "P: ${recipe.totalProtein.toInt()}g | C: ${recipe.totalCarbs.toInt()}g | F: ${recipe.totalFat.toInt()}g",
+                                        "P: ${df.format(recipe.totalProtein)}g | C: ${
+                                            df.format(
+                                                recipe.totalCarbs
+                                            )
+                                        }g | F: ${df.format(recipe.totalFat)}g",
                                         color = grayText,
                                         fontSize = 13.sp
                                     )
@@ -709,7 +715,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                             IconButton(onClick = {
                                 if (tempIngredients.isNotEmpty()) {
                                     val root = JSONObject()
-                                    val name = recipeNameInput.ifBlank { "Rezept" }
+                                    val name = recipeNameInput.ifBlank { "Mahlzeit" }
                                     root.put("recipeName", name)
                                     val arr = JSONArray()
                                     tempIngredients.forEach { e ->
@@ -767,7 +773,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Zutaten",
+                        "Produkte",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = textColor
@@ -779,7 +785,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                     ) {
                         Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp)); Spacer(
                         modifier = Modifier.width(6.dp)
-                    ); Text("Zutat")
+                    ); Text("Produkt")
                     }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
@@ -799,7 +805,7 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                                     .fillMaxWidth()
                                     .padding(32.dp),
                                 contentAlignment = Alignment.Center
-                            ) { Text("Noch keine Zutaten hinzugefügt.", color = grayText) }
+                            ) { Text("Noch keine Produkte hinzugefügt.", color = grayText) }
                         }
                     } else {
                         items(tempIngredients) { ingredient ->
@@ -817,8 +823,11 @@ fun RecipeScreen(viewModel: FoodViewModel) {
                                         fontWeight = FontWeight.SemiBold,
                                         color = textColor
                                     )
+                                    val formattedGrams =
+                                        if (ingredient.amountInGrams % 1.0 == 0.0) ingredient.amountInGrams.toInt()
+                                            .toString() else ingredient.amountInGrams.toString()
                                     Text(
-                                        "${ingredient.amountInGrams.toInt()}g • ${ingredient.calories} kcal",
+                                        "${formattedGrams}g • ${ingredient.calories} kcal",
                                         color = grayText,
                                         fontSize = 12.sp
                                     )

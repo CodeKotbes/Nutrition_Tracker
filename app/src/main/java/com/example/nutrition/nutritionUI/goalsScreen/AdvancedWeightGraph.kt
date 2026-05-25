@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,6 +106,12 @@ fun AdvancedWeightGraph(
     var selectedPoint by remember { mutableStateOf<WeightEntry?>(null) }
     var tapOffset by remember { mutableStateOf<Offset?>(null) }
     var selectedPointOffset by remember { mutableStateOf<Offset?>(null) }
+    val scrollState = rememberScrollState()
+    LaunchedEffect(allPoints.size) {
+        if (allPoints.isNotEmpty()) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
 
     Row(modifier = modifier) {
         Canvas(
@@ -124,7 +131,11 @@ fun AdvancedWeightGraph(
                 val valueY = minWeight + (i * stepY)
                 val y = height - (((valueY - minWeight) / range) * height).toFloat()
                 drawContext.canvas.nativeCanvas.drawText(
-                    String.format(Locale.US, "%.1f kg", valueY), 5f, y + 4f, textPaintY
+                    String.format(
+                        Locale.US,
+                        "%.1f kg",
+                        valueY
+                    ), 5f, y + 4f, textPaintY
                 )
             }
         }
@@ -133,15 +144,13 @@ fun AdvancedWeightGraph(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(scrollState)
         ) {
             Canvas(
                 modifier = Modifier
                     .width(totalWidthDp)
                     .fillMaxHeight()
-                    .pointerInput(allPoints) {
-                        detectTapGestures { tap -> tapOffset = tap }
-                    }
+                    .pointerInput(allPoints) { detectTapGestures { tap -> tapOffset = tap } }
             ) {
                 val height = size.height - 40.dp.toPx()
                 val width = size.width
@@ -196,7 +205,10 @@ fun AdvancedWeightGraph(
 
                     if (index == 0) historyPath.moveTo(x, y) else historyPath.lineTo(x, y)
                     drawContext.canvas.nativeCanvas.drawText(
-                        sdfX.format(Date(entry.timestamp)), x, height + 20.dp.toPx(), textPaintX
+                        sdfX.format(Date(entry.timestamp)),
+                        x,
+                        height + 20.dp.toPx(),
+                        textPaintX
                     )
                 }
 
@@ -290,7 +302,6 @@ fun AdvancedWeightGraph(
 
             if (selectedPoint != null && selectedPointOffset != null) {
                 val sdfTooltip = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-
                 Box(
                     modifier = Modifier
                         .offset {

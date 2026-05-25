@@ -1,5 +1,6 @@
 package com.example.nutrition.nutritionUI.goalsScreen
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +35,9 @@ enum class GoalsViewState { OVERVIEW, WEIGHT_DETAIL }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GoalsScreen(viewModel: FoodViewModel) {
+    val context = LocalContext.current
+    val sharedPrefs =
+        remember { context.getSharedPreferences("NutritionAppPrefs", Context.MODE_PRIVATE) }
     val isDark by viewModel.isDarkMode.collectAsState()
     val currentGoal by viewModel.goalKcal.collectAsState()
     val steps by viewModel.currentSteps.collectAsState()
@@ -50,7 +55,10 @@ fun GoalsScreen(viewModel: FoodViewModel) {
     var isMale by rememberSaveable { mutableStateOf(viewModel.getSavedIsMale()) }
     var selectedActivityLevel by rememberSaveable { mutableStateOf(viewModel.getSavedActivityLevel()) }
     var selectedGoalOffset by rememberSaveable { mutableStateOf(viewModel.getSavedGoalOffset()) }
-    var selectedStartMillis by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedStartMillis by rememberSaveable {
+        val saved = sharedPrefs.getLong("start_weight_millis", -1L)
+        mutableStateOf<Long?>(if (saved != -1L) saved else null)
+    }
     val sortedHistory = weightHistory.sortedBy { it.timestamp }
     var showLogDialog by rememberSaveable { mutableStateOf(false) }
     val latestWeight = sortedHistory.lastOrNull()?.weight
@@ -171,7 +179,10 @@ fun GoalsScreen(viewModel: FoodViewModel) {
                             goalOffset = selectedGoalOffset,
                             targetWeight = targetWeightInput.toDoubleOrNull(),
                             selectedStartMillis = selectedStartMillis,
-                            onStartSelected = { selectedStartMillis = it },
+                            onStartSelected = {
+                                selectedStartMillis = it
+                                sharedPrefs.edit().putLong("start_weight_millis", it).apply()
+                            },
                             onGoalOffsetChange = { newOffset ->
                                 selectedGoalOffset = newOffset
                                 if (isMale != null && selectedActivityLevel != null && ageInput.isNotBlank() && heightInput.isNotBlank()) {

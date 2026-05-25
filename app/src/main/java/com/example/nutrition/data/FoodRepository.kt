@@ -149,6 +149,10 @@ class FoodRepository(
         foodItemDao.insertFood(foodItem)
     }
 
+    suspend fun deleteFood(foodItem: FoodItem) {
+        foodItemDao.deleteFood(foodItem)
+    }
+
     suspend fun insertDiaryEntry(entry: DiaryEntry) {
         diaryDao.insertDiaryEntry(entry)
     }

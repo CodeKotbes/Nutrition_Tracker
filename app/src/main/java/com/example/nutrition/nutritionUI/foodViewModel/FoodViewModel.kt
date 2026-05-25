@@ -210,7 +210,7 @@ class FoodViewModel(
 
         for (i in 1..days) {
             currentWeight += dailyChangeKg
-            currentTimestamp += 24L * 60 * 60 * 1000 // +1 Tag
+            currentTimestamp += 24L * 60 * 60 * 1000
 
             projectionList.add(
                 WeightEntry(
@@ -390,18 +390,23 @@ class FoodViewModel(
 
     fun addFoodToDiary(food: FoodItem, amountInGrams: Double, mealType: String) {
         viewModelScope.launch {
-            repository.insertFood(food)
+            val existing = allFoods.value.find {
+                (food.barcode != null && it.barcode == food.barcode) ||
+                        (it.name == food.name && it.calories == food.calories)
+            }
+            val finalFood = if (existing != null) food.copy(id = existing.id) else food
+            repository.insertFood(finalFood)
 
             val factor = amountInGrams / 100.0
             val entry = DiaryEntry(
-                foodId = food.id,
-                foodName = food.name,
-                calories = (food.calories * factor).toInt(),
-                protein = food.protein * factor,
-                carbs = food.carbs * factor,
-                fat = food.fat * factor,
-                fiber = food.fiber * factor,
-                sugar = food.sugar * factor,
+                foodId = finalFood.id,
+                foodName = finalFood.name,
+                calories = (finalFood.calories * factor).toInt(),
+                protein = finalFood.protein * factor,
+                carbs = finalFood.carbs * factor,
+                fat = finalFood.fat * factor,
+                fiber = finalFood.fiber * factor,
+                sugar = finalFood.sugar * factor,
                 amountInGrams = amountInGrams,
                 mealType = mealType,
                 date = _currentDate.value
@@ -452,7 +457,12 @@ class FoodViewModel(
 
     fun addIngredientToTempRecipe(food: FoodItem, amountInGrams: Double) {
         viewModelScope.launch {
-            repository.insertFood(food)
+            val existing = allFoods.value.find {
+                (food.barcode != null && it.barcode == food.barcode) ||
+                        (it.name == food.name && it.calories == food.calories)
+            }
+            val finalFood = if (existing != null) food.copy(id = existing.id) else food
+            repository.insertFood(finalFood)
         }
 
         val factor = amountInGrams / 100.0
@@ -613,6 +623,21 @@ class FoodViewModel(
                 durationMinutes = newDuration
             )
             repository.insertWorkout(updatedWorkout)
+        }
+    }
+
+    fun getLastAmountForFood(foodName: String): Double {
+        val lastEntry = analysisEntries.value.lastOrNull { it.foodName == foodName }
+        return lastEntry?.amountInGrams ?: 100.0
+    }
+
+    fun deleteFoodFromHistory(food: FoodItem) {
+        viewModelScope.launch {
+            try {
+                repository.deleteFood(food)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }

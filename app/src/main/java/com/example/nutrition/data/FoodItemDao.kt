@@ -16,6 +16,9 @@ interface FoodItemDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFood(food: FoodItem): Long
 
+    @Delete
+    suspend fun deleteFood(food: FoodItem)
+
     @Query("SELECT * FROM food_items WHERE barcode = :barcode LIMIT 1")
     suspend fun getFoodByBarcode(barcode: String): FoodItem?
 

@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nutrition.model.DiaryEntry
+import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -208,6 +209,7 @@ fun NutrientProgressBar(
     grayText: Color,
     trackColor: Color
 ) {
+    val df = remember { DecimalFormat("#.#") }
     val progress = if (goal > 0) (current.toFloat() / goal).coerceIn(0f, 1f) else 0f
     Column(
         modifier = Modifier
@@ -220,7 +222,7 @@ fun NutrientProgressBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = textColor)
-            Text("${current.toInt()}g / ${goal}g", fontSize = 12.sp, color = grayText)
+            Text("${df.format(current)}g / ${goal}g", fontSize = 12.sp, color = grayText)
         }
         Spacer(modifier = Modifier.height(6.dp))
         LinearProgressIndicator(
@@ -250,6 +252,7 @@ fun MealSection(
 ) {
     val mealKcal = entries.sumOf { it.calories }
     var isExpanded by rememberSaveable { mutableStateOf(false) }
+    val df = remember { DecimalFormat("#.#") }
 
     Column(
         modifier = Modifier
@@ -318,7 +321,11 @@ fun MealSection(
                                     color = textColor
                                 )
                                 Text(
-                                    "${entry.amountInGrams.toInt()} g • P: ${entry.protein.toInt()}g | C: ${entry.carbs.toInt()}g | F: ${entry.fat.toInt()}g",
+                                    "${entry.amountInGrams.toInt()} g • P: ${df.format(entry.protein)}g | C: ${
+                                        df.format(
+                                            entry.carbs
+                                        )
+                                    }g | F: ${df.format(entry.fat)}g",
                                     color = grayText,
                                     fontSize = 12.sp
                                 )

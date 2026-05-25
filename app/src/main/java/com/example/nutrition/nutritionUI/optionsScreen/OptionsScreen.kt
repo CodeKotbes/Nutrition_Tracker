@@ -1229,6 +1229,22 @@ fun OptionsScreen(viewModel: FoodViewModel) {
 
                             } else {
                                 UpdateNote(
+                                    version = "Version 1.1",
+                                    date = "25.05.2026",
+                                    description = "Fokus auf Usability: Smarte Mengen, präzisere Nährwerte und UI-Verbesserungen.",
+                                    features = listOf(
+                                        "NEU: Smarte Mengen – Die App merkt sich ab sofort, wie viel Gramm du zuletzt von einem Produkt gegessen hast, und trägt dies automatisch ein.",
+                                        "UI: Makronährstoffe (Protein, Carbs, Fett) werden überall in der App nun deutlich präziser als Kommazahlen (z.B. 2.5g) dargestellt.",
+                                        "UI: Der Gewichts-Graph scrollt beim Öffnen jetzt automatisch nach ganz rechts zum aktuellsten Eintrag – kein langes Wischen mehr bei vielen Einträgen.",
+                                        "FIX: Das Start-Gewicht in der Ziel-Übersicht wird nun dauerhaft gespeichert und geht nicht mehr verloren.",
+                                        "FIX: Ungenutzte Produkte können nun (mit Sicherheitsabfrage) über ein graues Kreuz direkt aus dem Verlauf gelöscht werden. Zudem werden gescannte Produkte beim Korrigieren nicht mehr doppelt angelegt."
+                                    ),
+                                    textColor = textColor,
+                                    grayText = grayText,
+                                    accentBlue = accentBlue,
+                                    cardColor = cardColor
+                                )
+                                UpdateNote(
                                     version = "Version 1.0",
                                     date = "24.05.2026",
                                     description = "Willkommen beim lokalen Nutrition Tracker!",

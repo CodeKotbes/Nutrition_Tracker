@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,11 +61,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.nutrition.model.FoodItem
 import com.example.nutrition.model.Recipe
 import com.example.nutrition.nutritionUI.barcodeScanner.BarcodeScanner
 import com.example.nutrition.nutritionUI.foodViewModel.FoodViewModel
 import org.json.JSONObject
+import java.text.DecimalFormat
 
 @Composable
 fun AddFoodSheetContent(
@@ -89,6 +92,7 @@ fun AddFoodSheetContent(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val df = remember { DecimalFormat("#.#") }
     var searchInput by rememberSaveable { mutableStateOf("") }
     var gramsInput by rememberSaveable { mutableStateOf("100") }
     var isCustomMode by rememberSaveable { mutableStateOf(false) }
@@ -107,6 +111,7 @@ fun AddFoodSheetContent(
     var customFat by rememberSaveable { mutableStateOf("") }
     var customFiber by rememberSaveable { mutableStateOf("") }
     var customSugar by rememberSaveable { mutableStateOf("") }
+    var foodToDelete by remember { mutableStateOf<FoodItem?>(null) }
     val importLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let {
@@ -134,10 +139,16 @@ fun AddFoodSheetContent(
 
     LaunchedEffect(previewProduct) {
         previewProduct?.let {
-            editName = it.name; editKcal = it.calories.toString(); editProtein =
-            it.protein.toInt().toString(); editCarbs = it.carbs.toInt().toString()
-            editFat = it.fat.toInt().toString(); editFiber =
-            it.fiber.toInt().toString(); editSugar = it.sugar.toInt().toString()
+            editName = it.name; editKcal = it.calories.toString();
+            editProtein = df.format(it.protein).replace(",", ".");
+            editCarbs = df.format(it.carbs).replace(",", ".");
+            editFat = df.format(it.fat).replace(",", ".");
+            editFiber = df.format(it.fiber).replace(",", ".");
+            editSugar = df.format(it.sugar).replace(",", ".")
+
+            val lastAmount = viewModel.getLastAmountForFood(it.name)
+            gramsInput = if (lastAmount % 1.0 == 0.0) lastAmount.toInt()
+                .toString() else lastAmount.toString()
         }
     }
 
@@ -361,14 +372,21 @@ fun AddFoodSheetContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { onProductSelected(food) }) {
                                     Text(
                                         food.name,
                                         fontWeight = FontWeight.SemiBold,
                                         color = textColor
                                     )
                                     Text(
-                                        "${food.calories} kcal • P: ${food.protein.toInt()}g | C: ${food.carbs.toInt()}g | F: ${food.fat.toInt()}g",
+                                        "${food.calories} kcal • P: ${df.format(food.protein)}g | C: ${
+                                            df.format(
+                                                food.carbs
+                                            )
+                                        }g | F: ${df.format(food.fat)}g",
                                         color = grayText,
                                         fontSize = 11.sp
                                     )
@@ -381,10 +399,13 @@ fun AddFoodSheetContent(
                                             tint = accentBlue
                                         )
                                     }
-                                    Button(
-                                        onClick = { onProductSelected(food) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
-                                    ) { Text("Wählen", color = Color.White) }
+                                    IconButton(onClick = { foodToDelete = food }) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            "Löschen",
+                                            tint = grayText.copy(alpha = 0.6f)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -417,7 +438,11 @@ fun AddFoodSheetContent(
                                         color = textColor
                                     )
                                     Text(
-                                        "${food.calories} kcal • P: ${food.protein.toInt()}g | C: ${food.carbs.toInt()}g | F: ${food.fat.toInt()}g",
+                                        "${food.calories} kcal • P: ${df.format(food.protein)}g | C: ${
+                                            df.format(
+                                                food.carbs
+                                            )
+                                        }g | F: ${df.format(food.fat)}g",
                                         color = grayText,
                                         fontSize = 11.sp
                                     )
@@ -840,6 +865,59 @@ fun AddFoodSheetContent(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    if (foodToDelete != null) {
+        Dialog(onDismissRequest = { foodToDelete = null }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(cardColor)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Produkt entfernen",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = textColor
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Möchtest du '${foodToDelete?.name}' wirklich aus deinem Verlauf und der lokalen Datenbank löschen?",
+                    color = grayText,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 22.sp
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { foodToDelete = null },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = grayText.copy(alpha = 0.2f)),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Abbrechen", color = textColor, fontWeight = FontWeight.SemiBold) }
+                    Button(
+                        onClick = {
+                            foodToDelete?.let { viewModel.deleteFoodFromHistory(it) }
+                            foodToDelete = null
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF453A)),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Löschen", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
             }
         }
     }
